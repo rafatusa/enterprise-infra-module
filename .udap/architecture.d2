@@ -1,0 +1,28 @@
+# udap:meta cloud=aws region=us-east-1 target=ec2
+
+developer: Developer / Consumer { shape: person; udap-type: generic.user }
+ci_cd: GitHub Actions CI/CD { shape: rectangle; udap-type: generic.app }
+modules: Module Library {
+  aws_modules: AWS Modules { shape: rectangle; udap-type: aws.ec2 }
+  azure_modules: Azure Modules { shape: rectangle; udap-type: generic.app }
+  gcp_modules: GCP Modules { shape: rectangle; udap-type: generic.app }
+  do_modules: DigitalOcean Modules { shape: rectangle; udap-type: generic.app }
+}
+packages: Solution Packages {
+  aws_eks_pkg: AWS EKS Package { shape: rectangle; udap-type: aws.ecs }
+  azure_aks_pkg: Azure AKS Package { shape: rectangle; udap-type: generic.app }
+  gcp_gke_pkg: GCP GKE Package { shape: rectangle; udap-type: generic.app }
+  do_k8s_pkg: DO Kubernetes Package { shape: rectangle; udap-type: generic.app }
+}
+registry: Module Registry (Git Tags) { shape: rectangle; udap-type: aws.s3 }
+docs: Auto-Generated Docs (terraform-docs) { shape: rectangle; udap-type: generic.app }
+
+developer -> modules: references modules
+developer -> packages: consumes packages
+packages.aws_eks_pkg -> modules.aws_modules: composes
+packages.azure_aks_pkg -> modules.azure_modules: composes
+packages.gcp_gke_pkg -> modules.gcp_modules: composes
+packages.do_k8s_pkg -> modules.do_modules: composes
+ci_cd -> registry: tags + versions releases
+ci_cd -> docs: generates on merge
+modules -> registry: versioned refs

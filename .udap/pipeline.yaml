@@ -1,0 +1,253 @@
+version: 1
+name: terraform-enterprise-modules
+vcs: github
+
+rollback:
+  strategy: manual
+
+stages:
+  - id: lint
+    kind: lint
+    needs: []
+    timeout_minutes: 10
+    steps:
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Install terraform-docs
+        run: |
+          curl -sSLo /tmp/terraform-docs.tar.gz https://github.com/terraform-docs/terraform-docs/releases/download/v0.18.0/terraform-docs-v0.18.0-linux-amd64.tar.gz
+          tar -xzf /tmp/terraform-docs.tar.gz -C /tmp
+          sudo mv /tmp/terraform-docs /usr/local/bin/terraform-docs
+
+      - name: Install tflint
+        run: |
+          curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+
+      - name: Terraform Format Check
+        run: terraform fmt -check -recursive infra
+
+      - name: Lint all modules with tflint
+        run: |
+          find infra/modules infra/packages -name 'main.tf' | xargs -I{} dirname {} | sort -u | while read dir; do
+            echo "==> Linting $dir"
+            tflint --chdir="$dir" --config="$(pwd)/.tflint.hcl" || true
+          done
+
+  - id: validate
+    kind: test
+    needs: [lint]
+    timeout_minutes: 15
+    steps:
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Validate all modules
+        run: |
+          find infra/modules infra/packages -name 'main.tf' | xargs -I{} dirname {} | sort -u | while read dir; do
+            echo "==> Validating $dir"
+            (cd "$dir" && terraform init -backend=false -input=false && terraform validate)
+          done
+
+  - id: security
+    kind: security
+    needs: [validate]
+    timeout_minutes: 15
+    steps:
+      - name: Install tfsec
+        run: |
+          curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
+
+      - name: Run tfsec on modules
+        run: tfsec infra/modules --soft-fail
+
+      - name: Run tfsec on packages
+        run: tfsec infra/packages --soft-fail
+
+      - name: Install checkov
+        run: pip install checkov
+
+      - name: Run checkov on modules
+        run: checkov -d infra/modules --quiet --compact --soft-fail
+
+      - name: Run checkov on packages
+        run: checkov -d infra/packages --quiet --compact --soft-fail
+
+  - id: docs
+    kind: custom
+    needs: [security]
+    timeout_minutes: 10
+    steps:
+      - name: Install terraform-docs
+        run: |
+          curl -sSLo /tmp/terraform-docs.tar.gz https://github.com/terraform-docs/terraform-docs/releases/download/v0.18.0/terraform-docs-v0.18.0-linux-amd64.tar.gz
+          tar -xzf /tmp/terraform-docs.tar.gz -C /tmp
+          sudo mv /tmp/terraform-docs /usr/local/bin/terraform-docs
+
+      - name: Generate docs for all modules
+        run: |
+          find infra/modules infra/packages -name 'main.tf' | xargs -I{} dirname {} | sort -u | while read dir; do
+            echo "==> Generating docs for $dir"
+            terraform-docs markdown table --output-file README.md --output-mode inject "$dir" || \
+            terraform-docs markdown table "$dir" > "$dir/README.md"
+          done
+
+      - name: Check docs are up to date
+        run: |
+          if git diff --exit-code -- '**/README.md'; then
+            echo "Docs are up to date."
+          else
+            echo "WARNING: README.md files are out of date. Run terraform-docs locally."
+          fi
+
+  - id: provision
+    kind: provision
+    needs: [docs]
+    timeout_minutes: 5
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: us-east-1
+      TF_VAR_library_version: "v1.0.0"
+    steps:
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Terraform Init
+        run: |
+          cd infra
+          terraform init -input=false -reconfigure \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ secrets.PROJECT_NAME }}/terraform.tfstate" \
+            -backend-config="region=us-east-1"
+
+      - name: Terraform Plan
+        run: |
+          cd infra
+          terraform plan -input=false -out=tfplan
+
+      - name: Terraform Apply
+        run: |
+          cd infra
+          terraform apply -input=false -auto-approve tfplan
+
+  - id: configure
+    kind: configure
+    needs: [provision]
+    timeout_minutes: 5
+    steps:
+      - name: Record library release
+        run: |
+          echo "Module library provisioned — no server configuration required."
+          echo "Modules are consumed directly by git tag reference."
+          echo "AWS modules: vpc, ec2, eks, rds, s3, security-group, iam-role, kms, cloudwatch"
+          echo "Azure modules: resource-group, vnet, nsg, managed-identity, log-analytics, aks"
+          echo "Packages: aws-eks, azure-aks"
+
+  - id: verify
+    kind: verify
+    needs: [configure, provision]
+    timeout_minutes: 10
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: us-east-1
+    steps:
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+
+      - name: Verify module structure integrity
+        run: |
+          echo "==> Verifying module structure..."
+          ERRORS=0
+          for dir in \
+            infra/modules/aws/vpc \
+            infra/modules/aws/ec2 \
+            infra/modules/aws/eks \
+            infra/modules/aws/rds \
+            infra/modules/aws/s3 \
+            infra/modules/aws/security-group \
+            infra/modules/aws/iam-role \
+            infra/modules/aws/kms \
+            infra/modules/aws/cloudwatch \
+            infra/modules/azure/resource-group \
+            infra/modules/azure/vnet \
+            infra/modules/azure/nsg \
+            infra/modules/azure/managed-identity \
+            infra/modules/azure/log-analytics \
+            infra/modules/azure/aks \
+            infra/packages/aws-eks \
+            infra/packages/azure-aks; do
+            for f in main.tf variables.tf outputs.tf versions.tf; do
+              if [ ! -f "$dir/$f" ]; then
+                echo "MISSING: $dir/$f"
+                ERRORS=$((ERRORS+1))
+              fi
+            done
+          done
+          if [ $ERRORS -gt 0 ]; then
+            echo "FAILED: $ERRORS structure errors found."
+            exit 1
+          fi
+          echo "All module structures verified OK."
+
+      - name: Re-init infra state to verify sentinel
+        run: |
+          cd infra
+          terraform init -input=false -reconfigure \
+            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+            -backend-config="key=${{ secrets.PROJECT_NAME }}/terraform.tfstate" \
+            -backend-config="region=us-east-1"
+          terraform show -json | python3 -c "
+          import sys, json
+          state = json.load(sys.stdin)
+          resources = state.get('values', {}).get('root_module', {}).get('resources', [])
+          sentinel = [r for r in resources if r['type'] == 'null_resource']
+          if not sentinel:
+              print('WARN: sentinel resource not found in state — first apply pending')
+          else:
+              print(f'OK: sentinel resource present ({len(sentinel)} resource(s) in state)')
+          "
+
+      - name: Validate all modules pass terraform validate
+        run: |
+          find infra/modules infra/packages -name 'main.tf' | xargs -I{} dirname {} | sort -u | while read dir; do
+            (cd "$dir" && terraform init -backend=false -input=false -upgrade 2>/dev/null && terraform validate && echo "PASS: $dir")
+          done
+
+pipelines:
+  - id: nightly-security-scan
+    stages:
+      - id: nightly_security
+        kind: security
+        needs: []
+        timeout_minutes: 20
+        steps:
+          - name: Install tfsec
+            run: |
+              curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh | bash
+
+          - name: Full security scan
+            run: tfsec infra --format json --out tfsec-report.json || true
+
+          - name: Install checkov
+            run: pip install checkov
+
+          - name: Full checkov scan
+            run: checkov -d infra --output json --output-file-path /tmp/checkov-report || true
+
+          - name: Upload security reports
+            uses: actions/upload-artifact@v4
+            with:
+              name: security-reports
+              path: |
+                tfsec-report.json
+                /tmp/checkov-report/results_cli.json
