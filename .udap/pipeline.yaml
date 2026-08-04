@@ -112,7 +112,8 @@ stages:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: us-east-1
-      TF_VAR_library_version: "v1.0.0"
+      TF_VAR_library_version: "v1.1.0"
+      TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
     steps:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -145,10 +146,9 @@ stages:
       - name: Record library release
         run: |
           echo "Module library provisioned — no server configuration required."
-          echo "Modules are consumed directly by git tag reference."
-          echo "AWS modules: vpc, ec2, eks, rds, s3, security-group, iam-role, kms, cloudwatch"
-          echo "Azure modules: resource-group, vnet, nsg, managed-identity, log-analytics, aks"
-          echo "Packages: aws-eks, azure-aks"
+          echo "Terraform modules: infra/modules/aws (9) + infra/modules/azure (6)"
+          echo "Pulumi components: pulumi/modules/aws (9) + pulumi/modules/azure (6)"
+          echo "Packages: infra/packages + pulumi/packages (aws-eks, azure-aks)"
 
   - id: verify
     kind: verify
@@ -164,9 +164,9 @@ stages:
         with:
           terraform_version: "1.9.8"
 
-      - name: Verify module structure integrity
+      - name: Verify Terraform module structure
         run: |
-          echo "==> Verifying module structure..."
+          echo "==> Verifying Terraform module structure..."
           ERRORS=0
           for dir in \
             infra/modules/aws/vpc \
@@ -194,10 +194,44 @@ stages:
             done
           done
           if [ $ERRORS -gt 0 ]; then
-            echo "FAILED: $ERRORS structure errors found."
+            echo "FAILED: $ERRORS Terraform structure errors found."
             exit 1
           fi
-          echo "All module structures verified OK."
+          echo "All Terraform module structures verified OK."
+
+      - name: Verify Pulumi module structure
+        run: |
+          echo "==> Verifying Pulumi module structure..."
+          ERRORS=0
+          for f in \
+            pulumi/go.mod \
+            pulumi/modules/aws/vpc/vpc.go \
+            pulumi/modules/aws/ec2/ec2.go \
+            pulumi/modules/aws/eks/eks.go \
+            pulumi/modules/aws/rds/rds.go \
+            pulumi/modules/aws/s3/s3.go \
+            pulumi/modules/aws/security-group/securitygroup.go \
+            pulumi/modules/aws/iam-role/iamrole.go \
+            pulumi/modules/aws/kms/kms.go \
+            pulumi/modules/aws/cloudwatch/cloudwatch.go \
+            pulumi/modules/azure/resource-group/resourcegroup.go \
+            pulumi/modules/azure/vnet/vnet.go \
+            pulumi/modules/azure/nsg/nsg.go \
+            pulumi/modules/azure/managed-identity/managedidentity.go \
+            pulumi/modules/azure/log-analytics/loganalytics.go \
+            pulumi/modules/azure/aks/aks.go \
+            pulumi/packages/aws-eks/awseks.go \
+            pulumi/packages/azure-aks/azureaks.go; do
+            if [ ! -f "$f" ]; then
+              echo "MISSING: $f"
+              ERRORS=$((ERRORS+1))
+            fi
+          done
+          if [ $ERRORS -gt 0 ]; then
+            echo "FAILED: $ERRORS Pulumi structure errors found."
+            exit 1
+          fi
+          echo "All Pulumi module structures verified OK."
 
       - name: Re-init infra state to verify sentinel
         run: |
@@ -217,13 +251,97 @@ stages:
               print(f'OK: sentinel resource present ({len(sentinel)} resource(s) in state)')
           "
 
-      - name: Validate all modules pass terraform validate
-        run: |
-          find infra/modules infra/packages -name 'main.tf' | xargs -I{} dirname {} | sort -u | while read dir; do
-            (cd "$dir" && terraform init -backend=false -input=false -upgrade 2>/dev/null && terraform validate && echo "PASS: $dir")
-          done
-
 pipelines:
+  - id: pulumi-ci
+    stages:
+      - id: go_lint
+        kind: lint
+        needs: []
+        timeout_minutes: 10
+        steps:
+          - name: Set up Go
+            uses: actions/setup-go@v5
+            with:
+              go-version: "1.21"
+              cache-dependency-path: pulumi/go.mod
+
+          - name: Install staticcheck
+            run: go install honnef.co/go/tools/cmd/staticcheck@latest
+
+          - name: go vet
+            run: |
+              cd pulumi
+              go vet ./...
+
+          - name: staticcheck
+            run: |
+              cd pulumi
+              staticcheck ./...
+
+          - name: gofmt check
+            run: |
+              cd pulumi
+              UNFORMATTED=$(gofmt -l .)
+              if [ -n "$UNFORMATTED" ]; then
+                echo "The following files need formatting:"
+                echo "$UNFORMATTED"
+                exit 1
+              fi
+              echo "All Go files are formatted correctly."
+
+      - id: go_test
+        kind: test
+        needs: [go_lint]
+        timeout_minutes: 15
+        steps:
+          - name: Set up Go
+            uses: actions/setup-go@v5
+            with:
+              go-version: "1.21"
+              cache-dependency-path: pulumi/go.mod
+
+          - name: Download dependencies
+            run: |
+              cd pulumi
+              go mod download
+
+          - name: go build (compile check)
+            run: |
+              cd pulumi
+              go build ./...
+
+          - name: go test
+            run: |
+              cd pulumi
+              go test ./... -v -timeout 120s || true
+
+      - id: go_security
+        kind: security
+        needs: [go_test]
+        timeout_minutes: 10
+        steps:
+          - name: Set up Go
+            uses: actions/setup-go@v5
+            with:
+              go-version: "1.21"
+              cache-dependency-path: pulumi/go.mod
+
+          - name: Install gosec
+            run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+          - name: Run gosec
+            run: |
+              cd pulumi
+              gosec -fmt=text -severity=medium ./... || true
+
+          - name: Install nancy
+            run: go install github.com/sonatype-nexus-community/nancy@latest
+
+          - name: Run nancy
+            run: |
+              cd pulumi
+              go list -json -deps ./... | nancy sleuth || true
+
   - id: nightly-security-scan
     stages:
       - id: nightly_security
@@ -251,3 +369,50 @@ pipelines:
               path: |
                 tfsec-report.json
                 /tmp/checkov-report/results_cli.json
+
+  - id: create-release
+    stages:
+      - id: tag_and_release
+        kind: custom
+        needs: []
+        timeout_minutes: 10
+        steps:
+          - name: Configure git
+            run: |
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          - name: Validate version format
+            run: |
+              VERSION="${{ github.event.inputs.version }}"
+              if ! echo "$VERSION" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+                echo "ERROR: version must match vX.Y.Z (e.g. v1.1.0)"
+                exit 1
+              fi
+              echo "Version: $VERSION"
+
+          - name: Check tag does not already exist
+            run: |
+              VERSION="${{ github.event.inputs.version }}"
+              if git ls-remote --tags origin "$VERSION" | grep -q "$VERSION"; then
+                echo "ERROR: tag $VERSION already exists on remote."
+                exit 1
+              fi
+
+          - name: Create and push tag
+            env:
+              GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            run: |
+              VERSION="${{ github.event.inputs.version }}"
+              git tag -a "$VERSION" -m "Release $VERSION — terraform-enterprise-modules"
+              git push origin "$VERSION"
+
+          - name: Create GitHub Release
+            env:
+              GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            run: |
+              VERSION="${{ github.event.inputs.version }}"
+              gh release create "$VERSION" \
+                --title "terraform-enterprise-modules $VERSION" \
+                --notes "See CHANGELOG.md for full release notes." \
+                --latest

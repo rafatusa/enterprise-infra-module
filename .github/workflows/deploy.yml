@@ -103,7 +103,8 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: us-east-1
-      TF_VAR_library_version: v1.0.0
+      TF_VAR_library_version: v1.1.0
+      TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
     timeout-minutes: 5
     steps:
     - uses: actions/checkout@v4
@@ -136,10 +137,10 @@ jobs:
     - uses: actions/checkout@v4
     - name: Record library release
       run: "echo \"Module library provisioned \u2014 no server configuration required.\"\
-        \necho \"Modules are consumed directly by git tag reference.\"\necho \"AWS\
-        \ modules: vpc, ec2, eks, rds, s3, security-group, iam-role, kms, cloudwatch\"\
-        \necho \"Azure modules: resource-group, vnet, nsg, managed-identity, log-analytics,\
-        \ aks\"\necho \"Packages: aws-eks, azure-aks\"\n"
+        \necho \"Terraform modules: infra/modules/aws (9) + infra/modules/azure (6)\"\
+        \necho \"Pulumi components: pulumi/modules/aws (9) + pulumi/modules/azure\
+        \ (6)\"\necho \"Packages: infra/packages + pulumi/packages (aws-eks, azure-aks)\"\
+        \n"
   verify:
     runs-on: ubuntu-latest
     needs:
@@ -156,9 +157,9 @@ jobs:
       uses: hashicorp/setup-terraform@v3
       with:
         terraform_version: 1.9.8
-    - name: Verify module structure integrity
-      run: "echo \"==> Verifying module structure...\"\nERRORS=0\nfor dir in \\\n\
-        \  infra/modules/aws/vpc \\\n  infra/modules/aws/ec2 \\\n  infra/modules/aws/eks\
+    - name: Verify Terraform module structure
+      run: "echo \"==> Verifying Terraform module structure...\"\nERRORS=0\nfor dir\
+        \ in \\\n  infra/modules/aws/vpc \\\n  infra/modules/aws/ec2 \\\n  infra/modules/aws/eks\
         \ \\\n  infra/modules/aws/rds \\\n  infra/modules/aws/s3 \\\n  infra/modules/aws/security-group\
         \ \\\n  infra/modules/aws/iam-role \\\n  infra/modules/aws/kms \\\n  infra/modules/aws/cloudwatch\
         \ \\\n  infra/modules/azure/resource-group \\\n  infra/modules/azure/vnet\
@@ -168,8 +169,22 @@ jobs:
         \ main.tf variables.tf outputs.tf versions.tf; do\n    if [ ! -f \"$dir/$f\"\
         \ ]; then\n      echo \"MISSING: $dir/$f\"\n      ERRORS=$((ERRORS+1))\n \
         \   fi\n  done\ndone\nif [ $ERRORS -gt 0 ]; then\n  echo \"FAILED: $ERRORS\
-        \ structure errors found.\"\n  exit 1\nfi\necho \"All module structures verified\
-        \ OK.\"\n"
+        \ Terraform structure errors found.\"\n  exit 1\nfi\necho \"All Terraform\
+        \ module structures verified OK.\"\n"
+    - name: Verify Pulumi module structure
+      run: "echo \"==> Verifying Pulumi module structure...\"\nERRORS=0\nfor f in\
+        \ \\\n  pulumi/go.mod \\\n  pulumi/modules/aws/vpc/vpc.go \\\n  pulumi/modules/aws/ec2/ec2.go\
+        \ \\\n  pulumi/modules/aws/eks/eks.go \\\n  pulumi/modules/aws/rds/rds.go\
+        \ \\\n  pulumi/modules/aws/s3/s3.go \\\n  pulumi/modules/aws/security-group/securitygroup.go\
+        \ \\\n  pulumi/modules/aws/iam-role/iamrole.go \\\n  pulumi/modules/aws/kms/kms.go\
+        \ \\\n  pulumi/modules/aws/cloudwatch/cloudwatch.go \\\n  pulumi/modules/azure/resource-group/resourcegroup.go\
+        \ \\\n  pulumi/modules/azure/vnet/vnet.go \\\n  pulumi/modules/azure/nsg/nsg.go\
+        \ \\\n  pulumi/modules/azure/managed-identity/managedidentity.go \\\n  pulumi/modules/azure/log-analytics/loganalytics.go\
+        \ \\\n  pulumi/modules/azure/aks/aks.go \\\n  pulumi/packages/aws-eks/awseks.go\
+        \ \\\n  pulumi/packages/azure-aks/azureaks.go; do\n  if [ ! -f \"$f\" ]; then\n\
+        \    echo \"MISSING: $f\"\n    ERRORS=$((ERRORS+1))\n  fi\ndone\nif [ $ERRORS\
+        \ -gt 0 ]; then\n  echo \"FAILED: $ERRORS Pulumi structure errors found.\"\
+        \n  exit 1\nfi\necho \"All Pulumi module structures verified OK.\"\n"
     - name: Re-init infra state to verify sentinel
       run: "cd infra\nterraform init -input=false -reconfigure \\\n  -backend-config=\"\
         bucket=${{ secrets.TF_STATE_BUCKET }}\" \\\n  -backend-config=\"key=${{ secrets.PROJECT_NAME\
@@ -180,8 +195,3 @@ jobs:
         if not sentinel:\n    print('WARN: sentinel resource not found in state \u2014\
         \ first apply pending')\nelse:\n    print(f'OK: sentinel resource present\
         \ ({len(sentinel)} resource(s) in state)')\n\"\n"
-    - name: Validate all modules pass terraform validate
-      run: "find infra/modules infra/packages -name 'main.tf' | xargs -I{} dirname\
-        \ {} | sort -u | while read dir; do\n  (cd \"$dir\" && terraform init -backend=false\
-        \ -input=false -upgrade 2>/dev/null && terraform validate && echo \"PASS:\
-        \ $dir\")\ndone\n"

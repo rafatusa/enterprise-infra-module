@@ -10,7 +10,8 @@ jobs:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: us-east-1
-      TF_VAR_library_version: v1.0.0
+      TF_VAR_library_version: v1.1.0
+      TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
     steps:
     - uses: actions/checkout@v4
     - uses: hashicorp/setup-terraform@v3
