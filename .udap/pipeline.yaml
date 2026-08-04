@@ -149,6 +149,7 @@ stages:
           echo "Terraform modules: infra/modules/aws (9) + infra/modules/azure (6)"
           echo "Pulumi components: pulumi/modules/aws (9) + pulumi/modules/azure (6)"
           echo "Packages: infra/packages + pulumi/packages (aws-eks, azure-aks)"
+          echo "Library version: v1.1.0"
 
   - id: verify
     kind: verify
