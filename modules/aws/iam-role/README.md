@@ -1,39 +1,37 @@
-# Module: aws/iam-role
+# aws/iam-role
 
-Creates an AWS IAM Role with configurable trust policy principals, optional managed policy attachments, optional inline policy, and an EC2 instance profile when `ec2.amazonaws.com` is a principal.
+Provisions an IAM Role with a configurable trust policy, inline/managed policy attachments, and an optional EC2 instance profile.
 
 ## Usage
 
-```hcl
-module "eks_node_role" {
-  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/aws/iam-role?ref=v1.1.0"
+### EC2 instance role
 
-  name    = "my-app-eks-node-role"
-  project = "my-project"
+```hcl
+module "app_role" {
+  source = "github.com/rafatusa/enterprise-infra-module//infra/modules/aws/iam-role?ref=v1.1.0"
+
+  name        = "my-project-app"
+  project     = "my-project"
+  environment = "production"
 
   assume_role_principals = ["ec2.amazonaws.com"]
-  managed_policy_arns = [
-    "arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
-    "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly",
-    "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
-  ]
+  create_instance_profile = true
 }
 ```
 
-```hcl
-# IRSA role (Kubernetes service account trust)
-module "app_role" {
-  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/aws/iam-role?ref=v1.1.0"
+### IRSA (IAM Role for Service Account)
 
-  name    = "my-app-irsa-role"
-  project = "my-project"
+```hcl
+module "irsa_role" {
+  source = "github.com/rafatusa/enterprise-infra-module//infra/modules/aws/iam-role?ref=v1.1.0"
+
+  name        = "my-sa-role"
+  project     = "my-project"
+  environment = "production"
 
   oidc_provider_arn = module.eks.oidc_provider_arn
   oidc_provider_url = module.eks.oidc_provider_url
-  service_account_namespace = "default"
-  service_account_name      = "my-app"
-
-  managed_policy_arns = ["arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"]
+  service_account   = "my-namespace/my-service-account"
 }
 ```
 
@@ -41,17 +39,14 @@ module "app_role" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| name | IAM role name | `string` | — | yes |
-| project | Project tag | `string` | — | yes |
-| assume_role_principals | Service principals for trust | `list(string)` | `[]` | no |
-| oidc_provider_arn | OIDC provider ARN (IRSA) | `string` | `null` | no |
-| oidc_provider_url | OIDC issuer URL (IRSA) | `string` | `null` | no |
-| service_account_namespace | K8s namespace (IRSA) | `string` | `null` | no |
-| service_account_name | K8s service account (IRSA) | `string` | `null` | no |
-| managed_policy_arns | Managed policies to attach | `list(string)` | `[]` | no |
-| inline_policy_json | Inline policy document JSON | `string` | `null` | no |
-| environment | Environment tag | `string` | `production` | no |
-| tags | Additional tags | `map(string)` | `{}` | no |
+| `name` | Role name | `string` | — | yes |
+| `project` | Project tag value | `string` | — | yes |
+| `environment` | Environment tag value | `string` | — | yes |
+| `assume_role_principals` | List of service principals for trust policy | `list(string)` | `[]` | no |
+| `create_instance_profile` | Create an EC2 instance profile | `bool` | `false` | no |
+| `oidc_provider_arn` | OIDC provider ARN (for IRSA) | `string` | `""` | no |
+| `oidc_provider_url` | OIDC provider URL (for IRSA) | `string` | `""` | no |
+| `service_account` | `namespace/name` of the k8s service account | `string` | `""` | no |
 
 ## Outputs
 
@@ -59,5 +54,4 @@ module "app_role" {
 |------|-------------|
 | `role_arn` | IAM role ARN |
 | `role_name` | IAM role name |
-| `instance_profile_arn` | Instance profile ARN (EC2 only) |
-| `instance_profile_name` | Instance profile name (EC2 only) |
+| `instance_profile_arn` | Instance profile ARN (if created) |

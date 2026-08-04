@@ -19,12 +19,12 @@ import (
 
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 
-	"github.com/rafatusa/terraform-enterprise-modules/pulumi/modules/aws/cloudwatch"
-	"github.com/rafatusa/terraform-enterprise-modules/pulumi/modules/aws/eks"
-	"github.com/rafatusa/terraform-enterprise-modules/pulumi/modules/aws/iam-role"
-	"github.com/rafatusa/terraform-enterprise-modules/pulumi/modules/aws/kms"
-	"github.com/rafatusa/terraform-enterprise-modules/pulumi/modules/aws/s3"
-	"github.com/rafatusa/terraform-enterprise-modules/pulumi/modules/aws/vpc"
+	"github.com/rafatusa/enterprise-infra-module/pulumi/modules/aws/cloudwatch"
+	"github.com/rafatusa/enterprise-infra-module/pulumi/modules/aws/eks"
+	iamrole "github.com/rafatusa/enterprise-infra-module/pulumi/modules/aws/iam-role"
+	"github.com/rafatusa/enterprise-infra-module/pulumi/modules/aws/kms"
+	"github.com/rafatusa/enterprise-infra-module/pulumi/modules/aws/s3"
+	"github.com/rafatusa/enterprise-infra-module/pulumi/modules/aws/vpc"
 )
 
 // Args holds the top-level configuration for the full EKS environment.

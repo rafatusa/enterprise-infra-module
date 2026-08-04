@@ -1,24 +1,21 @@
-# Module: azure/log-analytics
+# azure/log-analytics
 
-Creates an **Azure Log Analytics Workspace** with optional solutions for
-Container Insights (AKS) and VM Insights.
+Provisions an Azure Log Analytics Workspace and the Container Insights solution for AKS monitoring.
 
 ## Usage
 
 ```hcl
-module "logs" {
-  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/azure/log-analytics?ref=v1.1.0"
+module "log_analytics" {
+  source = "github.com/rafatusa/enterprise-infra-module//infra/modules/azure/log-analytics?ref=v1.1.0"
 
-  name                      = "platform-logs"
-  resource_group_name       = module.rg.name
-  location                  = "eastus"
-  retention_in_days         = 90
+  name                = "my-project-law"
+  project             = "my-project"
+  environment         = "production"
+  resource_group_name = module.rg.name
+  location            = module.rg.location
+
+  retention_in_days        = 30
   enable_container_insights = true
-
-  tags = {
-    Environment = "production"
-    Team        = "platform"
-  }
 }
 ```
 
@@ -26,25 +23,18 @@ module "logs" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| name | Workspace name | `string` | — | yes |
-| resource_group_name | Resource group | `string` | — | yes |
-| location | Azure region | `string` | — | yes |
-| sku | Pricing SKU | `string` | `PerGB2018` | no |
-| retention_in_days | Log retention (30–730 days) | `number` | `90` | no |
-| daily_quota_gb | Ingestion cap in GB (-1 = unlimited) | `number` | `-1` | no |
-| internet_ingestion_enabled | Allow public ingestion | `bool` | `true` | no |
-| internet_query_enabled | Allow public queries | `bool` | `true` | no |
-| local_authentication_disabled | Force AAD-only auth | `bool` | `false` | no |
-| enable_container_insights | Deploy ContainerInsights solution | `bool` | `false` | no |
-| enable_vm_insights | Deploy VMInsights solution | `bool` | `false` | no |
-| tags | Resource tags | `map(string)` | `{}` | no |
+| `name` | Workspace name | `string` | — | yes |
+| `project` | Project tag value | `string` | — | yes |
+| `environment` | Environment tag value | `string` | — | yes |
+| `resource_group_name` | Resource group name | `string` | — | yes |
+| `location` | Azure region | `string` | — | yes |
+| `retention_in_days` | Log retention in days | `number` | `30` | no |
+| `enable_container_insights` | Deploy Container Insights solution | `bool` | `true` | no |
 
 ## Outputs
 
 | Name | Description |
 |------|-------------|
-| `id` | Resource ID |
-| `name` | Workspace name |
-| `workspace_id` | Globally unique workspace ID |
-| `primary_shared_key` | Primary ingestion key (sensitive) |
-| `secondary_shared_key` | Secondary ingestion key (sensitive) |
+| `workspace_id` | Log Analytics Workspace resource ID |
+| `workspace_name` | Workspace name |
+| `customer_id` | Workspace GUID (used for agent onboarding) |

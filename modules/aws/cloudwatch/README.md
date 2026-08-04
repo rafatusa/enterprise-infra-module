@@ -1,26 +1,21 @@
-# Module: aws/cloudwatch
+# aws/cloudwatch
 
-Creates a CloudWatch log group, optional metric alarms (CPU, memory, disk), and an optional CloudWatch dashboard for a named workload. Configurable retention and optional KMS encryption.
+Provisions a CloudWatch Log Group, CPU and memory metric alarms, and a basic operational dashboard.
 
 ## Usage
 
 ```hcl
 module "monitoring" {
-  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/aws/cloudwatch?ref=v1.1.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/modules/aws/cloudwatch?ref=v1.1.0"
 
-  name        = "my-app"
+  name        = "my-project"
   project     = "my-project"
   environment = "production"
 
-  retention_in_days = 90
-  kms_key_arn       = module.kms.key_arn
-
-  # CPU alarm — fires when avg CPU > 80% for 2 consecutive 5-min periods
-  enable_cpu_alarm       = true
-  cpu_alarm_threshold    = 80
-  alarm_actions          = [aws_sns_topic.alerts.arn]
-
-  create_dashboard = true
+  instance_id           = module.ec2.instance_id
+  alarm_sns_topic_arn   = aws_sns_topic.alerts.arn
+  cpu_alarm_threshold   = 80
+  log_retention_days    = 30
 }
 ```
 
@@ -28,22 +23,19 @@ module "monitoring" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| name | Log group and alarm name prefix | `string` | — | yes |
-| project | Project tag | `string` | — | yes |
-| environment | Environment tag | `string` | `production` | no |
-| retention_in_days | Log retention (1–3653 days) | `number` | `90` | no |
-| kms_key_arn | KMS key ARN for log encryption | `string` | `null` | no |
-| enable_cpu_alarm | Create CPU utilization alarm | `bool` | `false` | no |
-| cpu_alarm_threshold | CPU % threshold | `number` | `80` | no |
-| alarm_actions | SNS ARNs for alarm actions | `list(string)` | `[]` | no |
-| create_dashboard | Create CloudWatch dashboard | `bool` | `false` | no |
-| tags | Additional tags | `map(string)` | `{}` | no |
+| `name` | Resource name prefix | `string` | — | yes |
+| `project` | Project tag value | `string` | — | yes |
+| `environment` | Environment tag value | `string` | — | yes |
+| `instance_id` | EC2 instance ID to monitor | `string` | — | yes |
+| `alarm_sns_topic_arn` | SNS topic ARN for alarm notifications | `string` | `""` | no |
+| `cpu_alarm_threshold` | CPU % threshold to trigger alarm | `number` | `80` | no |
+| `log_retention_days` | CloudWatch log retention in days | `number` | `30` | no |
 
 ## Outputs
 
 | Name | Description |
 |------|-------------|
-| `log_group_name` | CloudWatch log group name |
-| `log_group_arn` | CloudWatch log group ARN |
-| `cpu_alarm_arn` | CPU alarm ARN (if created) |
-| `dashboard_name` | Dashboard name (if created) |
+| `log_group_name` | CloudWatch Log Group name |
+| `log_group_arn` | CloudWatch Log Group ARN |
+| `cpu_alarm_arn` | CPU alarm ARN |
+| `dashboard_name` | CloudWatch dashboard name |

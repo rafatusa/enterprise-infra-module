@@ -1,21 +1,20 @@
-# Module: aws/kms
+# aws/kms
 
-Creates an AWS KMS Customer Managed Key (CMK) with alias, optional key rotation, multi-region support, and a least-privilege key policy.
+Provisions a KMS Customer Managed Key (CMK) with an alias and automatic annual rotation.
 
 ## Usage
 
 ```hcl
 module "kms" {
-  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/aws/kms?ref=v1.1.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/modules/aws/kms?ref=v1.1.0"
 
-  name        = "my-app-eks"
-  description = "KMS key for EKS secrets encryption"
+  name        = "my-project"
   project     = "my-project"
   environment = "production"
+  description = "Encryption key for my-project application data"
 
-  enable_key_rotation = true
-  key_users           = [module.eks_cluster_role.role_arn]
-  key_admins          = ["arn:aws:iam::123456789012:role/platform-admin"]
+  key_administrators = ["arn:aws:iam::123456789012:role/my-admin-role"]
+  key_users          = ["arn:aws:iam::123456789012:role/my-app-role"]
 }
 ```
 
@@ -23,16 +22,13 @@ module "kms" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| name | Key alias name (without `alias/` prefix) | `string` | — | yes |
-| description | Key description | `string` | `Managed by Terraform` | no |
-| project | Project tag | `string` | — | yes |
-| environment | Environment tag | `string` | `production` | no |
-| enable_key_rotation | Enable annual automatic rotation | `bool` | `true` | no |
-| multi_region | Create multi-region key | `bool` | `false` | no |
-| deletion_window_in_days | Key deletion window | `number` | `30` | no |
-| key_users | ARNs allowed to use the key | `list(string)` | `[]` | no |
-| key_admins | ARNs allowed to manage the key | `list(string)` | `[]` | no |
-| tags | Additional tags | `map(string)` | `{}` | no |
+| `name` | Key alias suffix | `string` | — | yes |
+| `project` | Project tag value | `string` | — | yes |
+| `environment` | Environment tag value | `string` | — | yes |
+| `description` | Key description | `string` | `"Managed by Terraform"` | no |
+| `key_administrators` | IAM ARNs with key admin permissions | `list(string)` | `[]` | no |
+| `key_users` | IAM ARNs with key usage permissions | `list(string)` | `[]` | no |
+| `enable_rotation` | Enable automatic key rotation | `bool` | `true` | no |
 
 ## Outputs
 
@@ -40,5 +36,4 @@ module "kms" {
 |------|-------------|
 | `key_id` | KMS key ID |
 | `key_arn` | KMS key ARN |
-| `alias_arn` | Key alias ARN |
-| `alias_name` | Key alias name |
+| `alias_arn` | KMS alias ARN |

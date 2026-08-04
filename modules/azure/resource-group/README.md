@@ -1,18 +1,18 @@
-# Module: azure/resource-group
+# azure/resource-group
 
-Creates an Azure Resource Group with enforced standard tags (`Project`, `Environment`, `ManagedBy`, `Module`).
+Provisions an Azure Resource Group with consistent tagging and an optional management lock to prevent accidental deletion.
 
 ## Usage
 
 ```hcl
 module "rg" {
-  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/azure/resource-group?ref=v1.1.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/modules/azure/resource-group?ref=v1.1.0"
 
-  name        = "myapp-production-rg"
-  location    = "eastus"
-  project     = "myapp"
+  name        = "my-project-rg"
+  project     = "my-project"
   environment = "production"
-  tags        = { CostCenter = "platform" }
+  location    = "eastus"
+  enable_lock = true
 }
 ```
 
@@ -20,17 +20,16 @@ module "rg" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| name | Resource Group name | `string` | — | yes |
-| location | Azure region | `string` | — | yes |
-| project | Project tag | `string` | — | yes |
-| environment | Environment tag | `string` | `production` | no |
-| enable_delete_lock | Prevent accidental deletion | `bool` | `false` | no |
-| tags | Additional tags | `map(string)` | `{}` | no |
+| `name` | Resource group name | `string` | — | yes |
+| `project` | Project tag value | `string` | — | yes |
+| `environment` | Environment tag value | `string` | — | yes |
+| `location` | Azure region | `string` | — | yes |
+| `enable_lock` | Add a CanNotDelete management lock | `bool` | `false` | no |
 
 ## Outputs
 
 | Name | Description |
 |------|-------------|
-| `name` | Resource Group name |
+| `name` | Resource group name |
+| `id` | Resource group ID |
 | `location` | Azure region |
-| `id` | Resource Group resource ID |

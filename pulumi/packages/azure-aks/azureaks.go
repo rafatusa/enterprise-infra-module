@@ -19,12 +19,12 @@ import (
 
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 
-	"github.com/rafatusa/terraform-enterprise-modules/pulumi/modules/azure/aks"
-	"github.com/rafatusa/terraform-enterprise-modules/pulumi/modules/azure/log-analytics"
-	"github.com/rafatusa/terraform-enterprise-modules/pulumi/modules/azure/managed-identity"
-	"github.com/rafatusa/terraform-enterprise-modules/pulumi/modules/azure/nsg"
-	"github.com/rafatusa/terraform-enterprise-modules/pulumi/modules/azure/resource-group"
-	"github.com/rafatusa/terraform-enterprise-modules/pulumi/modules/azure/vnet"
+	"github.com/rafatusa/enterprise-infra-module/pulumi/modules/azure/aks"
+	loganalytics "github.com/rafatusa/enterprise-infra-module/pulumi/modules/azure/log-analytics"
+	managedidentity "github.com/rafatusa/enterprise-infra-module/pulumi/modules/azure/managed-identity"
+	"github.com/rafatusa/enterprise-infra-module/pulumi/modules/azure/nsg"
+	resourcegroup "github.com/rafatusa/enterprise-infra-module/pulumi/modules/azure/resource-group"
+	"github.com/rafatusa/enterprise-infra-module/pulumi/modules/azure/vnet"
 )
 
 // Args holds the top-level configuration for the full AKS environment.

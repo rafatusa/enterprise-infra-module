@@ -1,31 +1,25 @@
-# Module: azure/managed-identity
+# azure/managed-identity
 
-Creates a **User Assigned Managed Identity** with optional RBAC role assignments.
-
-Use this module to give Azure workloads (AKS, App Service, VMs) an identity
-without managing credentials — assign roles via `role_assignments` input.
+Provisions a User-Assigned Managed Identity and optional Azure RBAC role assignments.
 
 ## Usage
 
 ```hcl
 module "identity" {
-  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/azure/managed-identity?ref=v1.1.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/modules/azure/managed-identity?ref=v1.1.0"
 
-  name                = "my-aks-identity"
+  name                = "my-project-identity"
+  project             = "my-project"
+  environment         = "production"
   resource_group_name = module.rg.name
-  location            = "eastus"
+  location            = module.rg.location
 
   role_assignments = [
     {
-      role_definition_name = "AcrPull"
-      scope                = azurerm_container_registry.acr.id
+      scope                = "/subscriptions/${var.subscription_id}/resourceGroups/${module.rg.name}"
+      role_definition_name = "Contributor"
     }
   ]
-
-  tags = {
-    Environment = "production"
-    Team        = "platform"
-  }
 }
 ```
 
@@ -33,18 +27,18 @@ module "identity" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| name | Name of the managed identity | `string` | — | yes |
-| resource_group_name | Resource group to deploy into | `string` | — | yes |
-| location | Azure region | `string` | — | yes |
-| role_assignments | List of role assignments to create | `list(object)` | `[]` | no |
-| tags | Tags to apply to the identity | `map(string)` | `{}` | no |
+| `name` | Managed identity name | `string` | — | yes |
+| `project` | Project tag value | `string` | — | yes |
+| `environment` | Environment tag value | `string` | — | yes |
+| `resource_group_name` | Resource group name | `string` | — | yes |
+| `location` | Azure region | `string` | — | yes |
+| `role_assignments` | List of `{scope, role_definition_name}` objects | `list(object)` | `[]` | no |
 
 ## Outputs
 
 | Name | Description |
 |------|-------------|
-| `id` | Resource ID of the identity |
-| `name` | Name of the identity |
-| `principal_id` | Principal (object) ID — used for RBAC |
-| `client_id` | Client ID — used by workloads |
+| `id` | Managed identity resource ID |
+| `principal_id` | Service principal (object) ID |
+| `client_id` | Client ID |
 | `tenant_id` | Tenant ID |

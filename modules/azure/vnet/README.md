@@ -1,28 +1,23 @@
-# Module: azure/vnet
+# azure/vnet
 
-Creates an Azure Virtual Network with configurable subnets, DNS servers, service endpoints, and subnet delegations.
+Provisions an Azure Virtual Network with configurable subnets, service endpoints, and optional DDoS protection.
 
 ## Usage
 
 ```hcl
 module "vnet" {
-  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/azure/vnet?ref=v1.1.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/modules/azure/vnet?ref=v1.1.0"
 
-  name                = "myapp-vnet"
-  resource_group_name = module.rg.name
-  location            = "eastus"
-  address_space       = ["10.0.0.0/16"]
-  project             = "myapp"
+  name                = "my-project-vnet"
+  project             = "my-project"
   environment         = "production"
+  resource_group_name = module.rg.name
+  location            = module.rg.location
+  address_space       = ["10.0.0.0/16"]
 
   subnets = {
-    "aks-system" = {
-      address_prefixes  = ["10.0.1.0/24"]
-      service_endpoints = ["Microsoft.ContainerRegistry"]
-    }
-    "aks-user" = {
-      address_prefixes = ["10.0.2.0/24"]
-    }
+    aks-nodes = { cidr = "10.0.1.0/24", service_endpoints = ["Microsoft.Storage"] }
+    aks-pods  = { cidr = "10.0.2.0/24", service_endpoints = [] }
   }
 }
 ```
@@ -31,15 +26,14 @@ module "vnet" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| name | VNet name | `string` | — | yes |
-| resource_group_name | Resource Group name | `string` | — | yes |
-| location | Azure region | `string` | — | yes |
-| address_space | VNet CIDR blocks | `list(string)` | `["10.0.0.0/16"]` | no |
-| dns_servers | Custom DNS servers | `list(string)` | `[]` | no |
-| subnets | Subnet definitions map | `map(object)` | `{}` | no |
-| project | Project tag | `string` | — | yes |
-| environment | Environment tag | `string` | `production` | no |
-| tags | Additional tags | `map(string)` | `{}` | no |
+| `name` | VNet name | `string` | — | yes |
+| `project` | Project tag value | `string` | — | yes |
+| `environment` | Environment tag value | `string` | — | yes |
+| `resource_group_name` | Resource group name | `string` | — | yes |
+| `location` | Azure region | `string` | — | yes |
+| `address_space` | VNet address space | `list(string)` | — | yes |
+| `subnets` | Map of subnet name → `{cidr, service_endpoints}` | `map(object)` | — | yes |
+| `enable_ddos_protection` | Enable DDoS Protection Standard | `bool` | `false` | no |
 
 ## Outputs
 
@@ -47,5 +41,4 @@ module "vnet" {
 |------|-------------|
 | `vnet_id` | VNet resource ID |
 | `vnet_name` | VNet name |
-| `subnet_ids` | Map of subnet name → ID |
-| `subnet_address_prefixes` | Map of subnet name → address prefixes |
+| `subnet_ids` | Map of subnet name → subnet ID |

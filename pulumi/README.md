@@ -61,7 +61,7 @@ func NewMyComponent(ctx *pulumi.Context, name string, args *Args, opts ...pulumi
 
 ```go
 import (
-    "github.com/rafatusa/terraform-enterprise-modules/pulumi/modules/aws/vpc"
+    "github.com/rafatusa/enterprise-infra-module/pulumi/modules/aws/vpc"
     "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -91,7 +91,7 @@ func main() {
 
 ```go
 import (
-    awseks "github.com/rafatusa/terraform-enterprise-modules/pulumi/packages/aws-eks"
+    awseks "github.com/rafatusa/enterprise-infra-module/pulumi/packages/aws-eks"
     "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -117,7 +117,7 @@ func main() {
 
 ```go
 import (
-    azureaks "github.com/rafatusa/terraform-enterprise-modules/pulumi/packages/azure-aks"
+    azureaks "github.com/rafatusa/enterprise-infra-module/pulumi/packages/azure-aks"
     "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
@@ -145,14 +145,14 @@ Pin the module version in your `go.mod`:
 
 ```go
 require (
-    github.com/rafatusa/terraform-enterprise-modules/pulumi v1.1.0
+    github.com/rafatusa/enterprise-infra-module/pulumi v1.1.0
 )
 ```
 
 Or use `go get`:
 
 ```bash
-go get github.com/rafatusa/terraform-enterprise-modules/pulumi@v1.1.0
+go get github.com/rafatusa/enterprise-infra-module/pulumi@v1.1.0
 ```
 
 ## Module Outputs

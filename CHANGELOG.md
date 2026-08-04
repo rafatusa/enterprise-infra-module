@@ -20,7 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.0] - 2025-01-01
 
 ### Added
-- Initial release of the Terraform Enterprise Module Library
+- Initial release of the Enterprise Infrastructure Module Library
 - **AWS Terraform modules (9):** `vpc`, `ec2`, `eks`, `rds`, `s3`, `security-group`, `iam-role`, `kms`, `cloudwatch`
 - **Azure Terraform modules (6):** `resource-group`, `vnet`, `nsg`, `managed-identity`, `log-analytics`, `aks`
 - **Solution packages:** `aws-eks` (full production EKS cluster), `azure-aks` (full production AKS cluster)
@@ -31,6 +31,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - All modules tagged: `Project`, `Environment`, `ManagedBy`, `Module`
 - All module variables use pessimistic constraints (`~>`)
 
-[Unreleased]: https://github.com/rafatusa/terraform-enterprise-modules/compare/v1.1.0...HEAD
-[1.1.0]: https://github.com/rafatusa/terraform-enterprise-modules/compare/v1.0.0...v1.1.0
-[1.0.0]: https://github.com/rafatusa/terraform-enterprise-modules/releases/tag/v1.0.0
+[Unreleased]: https://github.com/rafatusa/enterprise-infra-module/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/rafatusa/enterprise-infra-module/compare/v1.0.0...v1.1.0
+[1.0.0]: https://github.com/rafatusa/enterprise-infra-module/releases/tag/v1.0.0

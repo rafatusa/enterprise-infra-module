@@ -1,19 +1,18 @@
-# Module: azure/nsg
+# azure/nsg
 
-Creates an Azure Network Security Group with configurable rules and optional subnet associations.
+Provisions an Azure Network Security Group with configurable inbound/outbound security rules and optional subnet associations.
 
 ## Usage
 
 ```hcl
 module "nsg" {
-  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/azure/nsg?ref=v1.1.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/modules/azure/nsg?ref=v1.1.0"
 
-  name                = "aks-nsg"
-  resource_group_name = module.rg.name
-  location            = "eastus"
-  project             = "myapp"
+  name                = "my-project-nsg"
+  project             = "my-project"
   environment         = "production"
-  subnet_ids          = [module.vnet.subnet_ids["aks-system"]]
+  resource_group_name = module.rg.name
+  location            = module.rg.location
 
   security_rules = [
     {
@@ -28,6 +27,8 @@ module "nsg" {
       destination_address_prefix = "*"
     }
   ]
+
+  subnet_ids = [module.vnet.subnet_ids["aks-nodes"]]
 }
 ```
 
@@ -35,14 +36,13 @@ module "nsg" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| name | NSG name | `string` | — | yes |
-| resource_group_name | Resource Group name | `string` | — | yes |
-| location | Azure region | `string` | — | yes |
-| security_rules | Security rule list | `list(object)` | `[]` | no |
-| subnet_ids | Subnets to associate | `list(string)` | `[]` | no |
-| project | Project tag | `string` | — | yes |
-| environment | Environment tag | `string` | `production` | no |
-| tags | Additional tags | `map(string)` | `{}` | no |
+| `name` | NSG name | `string` | — | yes |
+| `project` | Project tag value | `string` | — | yes |
+| `environment` | Environment tag value | `string` | — | yes |
+| `resource_group_name` | Resource group name | `string` | — | yes |
+| `location` | Azure region | `string` | — | yes |
+| `security_rules` | List of security rule objects | `list(object)` | `[]` | no |
+| `subnet_ids` | Subnet IDs to associate the NSG with | `list(string)` | `[]` | no |
 
 ## Outputs
 

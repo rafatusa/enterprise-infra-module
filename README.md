@@ -1,10 +1,10 @@
-# terraform-enterprise-modules
+# enterprise-infra-module
 
 A production-grade **infrastructure module library** for AWS and Azure — available in both **Terraform HCL** and **Pulumi Go**.
 
 Every module is a self-contained, versioned, composable unit. Solution packages compose modules into full environments (EKS, AKS) with a single reference.
 
-> **Current version:** `v1.1.0` — [Releases](https://github.com/rafatusa/terraform-enterprise-modules/releases) · [Changelog](./CHANGELOG.md)
+> **Current version:** `v1.1.0` — [Releases](https://github.com/rafatusa/enterprise-infra-module/releases) · [Changelog](./CHANGELOG.md)
 
 ---
 
@@ -71,7 +71,7 @@ Mirrors the Terraform module set exactly — same inputs, same outputs, same tag
 ## Repository layout
 
 ```
-terraform-enterprise-modules/
+enterprise-infra-module/
 ├── infra/                          # Terraform root (platform pipeline entry point)
 │   ├── modules/
 │   │   ├── aws/                    # 9 AWS Terraform modules
@@ -147,7 +147,7 @@ terraform {
 }
 
 module "vpc" {
-  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/aws/vpc?ref=v1.1.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/modules/aws/vpc?ref=v1.1.0"
 
   name        = var.project_name
   project     = var.project_name
@@ -161,7 +161,7 @@ module "vpc" {
 }
 
 module "ec2" {
-  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/aws/ec2?ref=v1.1.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/modules/aws/ec2?ref=v1.1.0"
 
   name               = var.project_name
   project            = var.project_name
@@ -206,7 +206,7 @@ jobs:
 ```hcl
 # infra/main.tf — EKS consumer
 module "eks_env" {
-  source = "github.com/rafatusa/terraform-enterprise-modules//infra/packages/aws-eks?ref=v1.1.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/packages/aws-eks?ref=v1.1.0"
 
   cluster_name = var.cluster_name
   environment  = "production"
@@ -268,7 +268,7 @@ jobs:
 ```hcl
 # infra/main.tf — AKS consumer
 module "aks_env" {
-  source = "github.com/rafatusa/terraform-enterprise-modules//infra/packages/azure-aks?ref=v1.1.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/packages/azure-aks?ref=v1.1.0"
 
   cluster_name        = var.cluster_name
   resource_group_name = "${var.cluster_name}-rg"
@@ -324,7 +324,7 @@ module my-infra
 go 1.22
 
 require (
-    github.com/rafatusa/terraform-enterprise-modules/pulumi v1.1.0
+    github.com/rafatusa/enterprise-infra-module/pulumi v1.1.0
     github.com/pulumi/pulumi/sdk/v3 v3.110.0
 )
 ```
@@ -335,8 +335,8 @@ package main
 
 import (
     "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-    "github.com/rafatusa/terraform-enterprise-modules/pulumi/modules/aws/vpc"
-    "github.com/rafatusa/terraform-enterprise-modules/pulumi/modules/aws/ec2"
+    "github.com/rafatusa/enterprise-infra-module/pulumi/modules/aws/vpc"
+    "github.com/rafatusa/enterprise-infra-module/pulumi/modules/aws/ec2"
 )
 
 func main() {
@@ -368,7 +368,7 @@ func main() {
             return err
         }
 
-        ctx.Export("vpcId",     v.VpcID)
+        ctx.Export("vpcId",      v.VpcID)
         ctx.Export("instanceId", instance.InstanceID)
         ctx.Export("publicIp",   instance.PublicIP)
         return nil
@@ -386,7 +386,7 @@ package main
 
 import (
     "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-    awseks "github.com/rafatusa/terraform-enterprise-modules/pulumi/packages/aws-eks"
+    awseks "github.com/rafatusa/enterprise-infra-module/pulumi/packages/aws-eks"
 )
 
 func main() {
@@ -417,7 +417,7 @@ package main
 
 import (
     "github.com/pulumi/pulumi/sdk/v3/go/pulumi"
-    azureaks "github.com/rafatusa/terraform-enterprise-modules/pulumi/packages/azure-aks"
+    azureaks "github.com/rafatusa/enterprise-infra-module/pulumi/packages/azure-aks"
 )
 
 func main() {
@@ -431,8 +431,8 @@ func main() {
         if err != nil {
             return err
         }
-        ctx.Export("clusterName",        env.ClusterName)
-        ctx.Export("resourceGroupName",  env.ResourceGroupName)
+        ctx.Export("clusterName",       env.ClusterName)
+        ctx.Export("resourceGroupName", env.ResourceGroupName)
         return nil
     })
 }
@@ -446,24 +446,23 @@ Always pin a release tag so your pipeline is deterministic.
 
 **Terraform** — in `infra/main.tf`:
 ```hcl
-source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/aws/vpc?ref=v1.1.0"
+source = "github.com/rafatusa/enterprise-infra-module//infra/modules/aws/vpc?ref=v1.1.0"
 ```
 
 **Pulumi Go** — in `go.mod`:
 ```go
 require (
-    github.com/rafatusa/terraform-enterprise-modules/pulumi v1.1.0
+    github.com/rafatusa/enterprise-infra-module/pulumi v1.1.0
 )
 ```
 
 To upgrade:
 ```bash
-# Terraform
-# Update the ?ref= tag in main.tf, then:
+# Terraform — update the ?ref= tag in main.tf, then:
 terraform init -upgrade
 
 # Pulumi
-go get github.com/rafatusa/terraform-enterprise-modules/pulumi@v1.2.0
+go get github.com/rafatusa/enterprise-infra-module/pulumi@v1.2.0
 go mod tidy
 ```
 

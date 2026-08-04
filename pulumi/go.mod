@@ -1,4 +1,4 @@
-module github.com/rafatusa/terraform-enterprise-modules/pulumi
+module github.com/rafatusa/enterprise-infra-module/pulumi
 
 go 1.21
 

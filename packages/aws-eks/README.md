@@ -1,24 +1,28 @@
-# Package: aws-eks
+# aws-eks package
 
-**Production-ready AWS EKS environment** — a single module reference that
-automatically provisions the full stack in dependency order:
+A solution package that composes all 9 AWS modules into a complete, production-ready EKS environment in the correct dependency order.
 
-| Layer | Resources |
-|-------|-----------|
-| **Network** | VPC, public + private subnets, Internet Gateway, NAT Gateway (one per AZ), route tables |
-| **Security** | Cluster security group, KMS key (secret envelope encryption) |
-| **IAM** | EKS cluster service role, managed node group role |
-| **Compute** | EKS cluster, managed node groups (configurable, multi-AZ) |
-| **Observability** | CloudWatch log group, all control-plane log types enabled |
+## What it provisions
+
+| Module | Resource |
+|--------|----------|
+| `aws/kms` | KMS CMK for EKS secrets + EBS encryption |
+| `aws/vpc` | VPC, public/private subnets, NAT gateways |
+| `aws/security-group` | Cluster and node security groups |
+| `aws/iam-role` | EKS cluster role + node group role |
+| `aws/eks` | EKS control plane + managed node groups + OIDC |
+| `aws/s3` | Artifact/config bucket (KMS-encrypted) |
+| `aws/rds` | Optional RDS PostgreSQL (disabled by default) |
+| `aws/cloudwatch` | Log group + CPU alarms + dashboard |
 
 ## Usage
 
 ```hcl
 module "eks_env" {
-  source = "github.com/rafatusa/terraform-enterprise-modules//infra/packages/aws-eks?ref=v1.1.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/packages/aws-eks?ref=v1.1.0"
 
-  cluster_name    = "platform-eks"
-  cluster_version = "1.29"
+  cluster_name = var.cluster_name
+  environment  = "production"
 
   availability_zones   = ["us-east-1a", "us-east-1b", "us-east-1c"]
   public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
@@ -28,77 +32,54 @@ module "eks_env" {
     system = {
       instance_types = ["m5.large"]
       desired_size   = 3
-      min_size       = 3
+      min_size       = 2
       max_size       = 5
-      labels         = { role = "system" }
-    }
-    apps = {
-      instance_types = ["m5.xlarge"]
-      desired_size   = 3
-      min_size       = 1
-      max_size       = 20
-      labels         = { role = "apps" }
     }
   }
 
-  log_retention_days = 90
-
   tags = {
-    Project     = "platform"
+    Project     = var.cluster_name
     Environment = "production"
     ManagedBy   = "terraform"
   }
 }
 
-# Consume outputs downstream
-output "cluster_endpoint" {
-  value = module.eks_env.cluster_endpoint
-}
-output "vpc_id" {
-  value = module.eks_env.vpc_id
-}
+output "cluster_endpoint" { value = module.eks_env.cluster_endpoint }
+output "vpc_id"           { value = module.eks_env.vpc_id }
 ```
 
-## Inputs
+## GitHub Actions pipeline
 
-| Name | Description | Type | Default | Required |
-|------|-------------|------|---------|----------|
-| cluster_name | Cluster name (resource prefix) | `string` | — | yes |
-| cluster_version | Kubernetes version | `string` | `1.29` | no |
-| vpc_cidr | VPC CIDR | `string` | `10.0.0.0/16` | no |
-| availability_zones | AZs for subnets | `list(string)` | — | yes |
-| public_subnet_cidrs | Public subnet CIDRs | `list(string)` | — | yes |
-| private_subnet_cidrs | Private subnet CIDRs | `list(string)` | — | yes |
-| single_nat_gateway | One NAT GW instead of per-AZ | `bool` | `false` | no |
-| endpoint_public_access | Public API server | `bool` | `false` | no |
-| node_groups | Node group map | `map(object)` | `{general={…}}` | no |
-| kms_deletion_window | KMS deletion window (days) | `number` | `30` | no |
-| log_retention_days | CloudWatch retention | `number` | `90` | no |
-| tags | Tags for all resources | `map(string)` | `{}` | no |
+```yaml
+- uses: hashicorp/setup-terraform@v3
+  with:
+    terraform_version: "1.7.0"
 
-## Outputs
+- name: Terraform init
+  run: |
+    terraform init -input=false -reconfigure \
+      -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
+      -backend-config="key=${{ secrets.PROJECT_NAME }}/terraform.tfstate" \
+      -backend-config="region=us-east-1"
+  working-directory: infra/
 
-| Name | Description |
-|------|-------------|
+- name: Terraform apply
+  run: terraform apply -auto-approve -input=false
+  working-directory: infra/
+  env:
+    AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+    AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+    AWS_REGION:            us-east-1
+    TF_VAR_cluster_name:   ${{ secrets.PROJECT_NAME }}
+```
+
+## Key outputs
+
+| Output | Description |
+|--------|-------------|
+| `cluster_name` | EKS cluster name |
+| `cluster_endpoint` | EKS API server endpoint |
+| `oidc_provider_arn` | OIDC provider ARN for IRSA |
 | `vpc_id` | VPC ID |
 | `private_subnet_ids` | Private subnet IDs |
-| `public_subnet_ids` | Public subnet IDs |
-| `cluster_id` | EKS cluster ID |
-| `cluster_name` | EKS cluster name |
-| `cluster_endpoint` | API server endpoint |
-| `cluster_ca_certificate` | Cluster CA (base64) |
-| `oidc_provider_arn` | OIDC provider ARN |
-| `oidc_provider_url` | OIDC issuer URL |
-| `cluster_role_arn` | Cluster service role ARN |
-| `node_role_arn` | Node group role ARN |
 | `kms_key_arn` | KMS key ARN |
-| `kms_key_id` | KMS key ID |
-| `cloudwatch_log_group_name` | Log group name |
-
-## Security defaults
-
-- API server is **private-only** by default (`endpoint_public_access = false`)
-- Secrets encrypted with a **customer-managed KMS key** (rotation enabled)
-- All control-plane log types shipped to CloudWatch
-- Nodes run in **private subnets only**; outbound via NAT Gateway
-- Node IAM role follows least-privilege (EKS worker + CNI + ECR read-only)

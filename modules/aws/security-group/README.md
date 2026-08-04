@@ -1,42 +1,25 @@
-# Module: aws/security-group
+# aws/security-group
 
-Creates an AWS Security Group with dynamic ingress and egress rules defined as structured variable input.
+Provisions a configurable AWS Security Group with dynamic ingress and egress rules.
 
 ## Usage
 
 ```hcl
-module "app_sg" {
-  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/aws/security-group?ref=v1.1.0"
+module "sg" {
+  source = "github.com/rafatusa/enterprise-infra-module//infra/modules/aws/security-group?ref=v1.1.0"
 
-  name    = "my-app-sg"
-  vpc_id  = module.vpc.vpc_id
-  project = "my-project"
+  name        = "my-project-app"
+  project     = "my-project"
+  environment = "production"
+  vpc_id      = module.vpc.vpc_id
 
   ingress_rules = [
-    {
-      from_port   = 443
-      to_port     = 443
-      protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
-      description = "HTTPS from internet"
-    },
-    {
-      from_port          = 8080
-      to_port            = 8080
-      protocol           = "tcp"
-      security_group_ids = [module.alb_sg.security_group_id]
-      description        = "App port from ALB"
-    }
+    { from_port = 80,  to_port = 80,  protocol = "tcp", cidr_blocks = ["0.0.0.0/0"] },
+    { from_port = 443, to_port = 443, protocol = "tcp", cidr_blocks = ["0.0.0.0/0"] },
   ]
 
   egress_rules = [
-    {
-      from_port   = 0
-      to_port     = 0
-      protocol    = "-1"
-      cidr_blocks = ["0.0.0.0/0"]
-      description = "Allow all outbound"
-    }
+    { from_port = 0, to_port = 0, protocol = "-1", cidr_blocks = ["0.0.0.0/0"] },
   ]
 }
 ```
@@ -45,14 +28,12 @@ module "app_sg" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| name | Security group name | `string` | — | yes |
-| vpc_id | VPC to create the SG in | `string` | — | yes |
-| project | Project tag | `string` | — | yes |
-| description | SG description | `string` | `Managed by Terraform` | no |
-| environment | Environment tag | `string` | `production` | no |
-| ingress_rules | Ingress rule list | `list(object)` | `[]` | no |
-| egress_rules | Egress rule list | `list(object)` | `[allow all]` | no |
-| tags | Additional tags | `map(string)` | `{}` | no |
+| `name` | Security group name | `string` | — | yes |
+| `project` | Project tag value | `string` | — | yes |
+| `environment` | Environment tag value | `string` | — | yes |
+| `vpc_id` | VPC ID | `string` | — | yes |
+| `ingress_rules` | List of ingress rule objects | `list(object)` | `[]` | no |
+| `egress_rules` | List of egress rule objects | `list(object)` | allow all | no |
 
 ## Outputs
 

@@ -1,51 +1,30 @@
 # azure/aks
 
-Deploys a production-grade **Azure Kubernetes Service (AKS)** cluster with:
-
-- Private API server endpoint
-- Azure CNI networking with Network Policy
-- System-assigned **or** User-assigned Managed Identity
-- Azure AAD integration with Azure RBAC
-- Cluster autoscaler on system and user node pools
-- OIDC issuer + Workload Identity
-- Secrets Store CSI driver (Key Vault integration)
-- OMS Agent → Log Analytics (Container Insights)
-- Control-plane diagnostic logs to Log Analytics
-- Maintenance window (Sunday 02:00–04:00)
+Provisions a production-grade AKS cluster with private API server, Azure AD RBAC, Workload Identity, Azure CNI, and CSI secret store.
 
 ## Usage
 
 ```hcl
 module "aks" {
-  source = "github.com/your-org/terraform-enterprise-modules//modules/azure/aks?ref=v1.0.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/modules/azure/aks?ref=v1.1.0"
 
-  cluster_name        = "platform-aks"
+  cluster_name        = "my-cluster"
+  project             = "my-project"
+  environment         = "production"
   resource_group_name = module.rg.name
-  location            = "eastus"
-  subnet_id           = module.vnet.subnet_ids["aks"]
+  location            = module.rg.location
 
-  kubernetes_version          = "1.29"
-  user_assigned_identity_id   = module.identity.id
-  admin_group_object_ids      = ["<aad-group-object-id>"]
-  log_analytics_workspace_id  = module.logs.id
+  kubernetes_version     = "1.30"
+  node_subnet_id         = module.vnet.subnet_ids["aks-nodes"]
+  pod_subnet_id          = module.vnet.subnet_ids["aks-pods"]
+  log_analytics_id       = module.log_analytics.workspace_id
+  admin_group_object_ids = ["<aad-admin-group-object-id>"]
 
-  user_node_pools = [
-    {
-      name            = "apps"
-      vm_size         = "Standard_D8s_v5"
-      node_count      = 3
-      min_count       = 2
-      max_count       = 10
-      os_disk_size_gb = 128
-      max_pods        = 110
-      node_labels     = { "role" = "apps" }
-      node_taints     = []
-    }
-  ]
-
-  tags = {
-    Environment = "production"
-    Team        = "platform"
+  default_node_pool = {
+    vm_size    = "Standard_D2s_v3"
+    node_count = 3
+    min_count  = 2
+    max_count  = 5
   }
 }
 ```
@@ -54,43 +33,23 @@ module "aks" {
 
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|----------|
-| cluster_name | AKS cluster name | `string` | — | yes |
-| resource_group_name | Resource group | `string` | — | yes |
-| location | Azure region | `string` | — | yes |
-| subnet_id | Subnet for node pools | `string` | — | yes |
-| kubernetes_version | Kubernetes version | `string` | `null` | no |
-| sku_tier | SLA tier (Free/Paid/Standard) | `string` | `Paid` | no |
-| user_assigned_identity_id | User-assigned identity ID | `string` | `null` | no |
-| azure_rbac_enabled | Use Azure RBAC | `bool` | `true` | no |
-| admin_group_object_ids | AAD admin group IDs | `list(string)` | `[]` | no |
-| private_cluster_enabled | Private API server | `bool` | `true` | no |
-| network_plugin | CNI plugin | `string` | `azure` | no |
-| network_policy | Network policy engine | `string` | `azure` | no |
-| service_cidr | Service CIDR | `string` | `10.100.0.0/16` | no |
-| availability_zones | AZs for node pools | `list(string)` | `["1","2","3"]` | no |
-| system_vm_size | System node VM size | `string` | `Standard_D4s_v5` | no |
-| system_node_count | System node count | `number` | `3` | no |
-| system_min_count | System autoscaler min | `number` | `1` | no |
-| system_max_count | System autoscaler max | `number` | `5` | no |
-| user_node_pools | Additional node pools | `list(object)` | `[]` | no |
-| log_analytics_workspace_id | Log Analytics workspace ID | `string` | `null` | no |
-| enable_secret_store_csi | Enable Key Vault CSI driver | `bool` | `true` | no |
-| enable_defender | Enable Defender for Containers | `bool` | `false` | no |
-| oidc_issuer_enabled | Enable OIDC issuer | `bool` | `true` | no |
-| workload_identity_enabled | Enable Workload Identity | `bool` | `true` | no |
-| tags | Resource tags | `map(string)` | `{}` | no |
+| `cluster_name` | AKS cluster name | `string` | — | yes |
+| `project` | Project tag value | `string` | — | yes |
+| `environment` | Environment tag value | `string` | — | yes |
+| `resource_group_name` | Resource group name | `string` | — | yes |
+| `location` | Azure region | `string` | — | yes |
+| `kubernetes_version` | Kubernetes version | `string` | `"1.30"` | no |
+| `node_subnet_id` | Subnet ID for nodes | `string` | — | yes |
+| `pod_subnet_id` | Subnet ID for pods (Azure CNI Overlay) | `string` | — | yes |
+| `log_analytics_id` | Log Analytics workspace ID | `string` | — | yes |
+| `admin_group_object_ids` | AAD group IDs for cluster-admin | `list(string)` | — | yes |
+| `default_node_pool` | Default node pool configuration | `object` | — | yes |
 
 ## Outputs
 
 | Name | Description |
 |------|-------------|
-| cluster_id | Cluster resource ID |
-| cluster_name | Cluster name |
-| fqdn | API server FQDN |
-| private_fqdn | Private API server FQDN |
-| kube_config_raw | kubeconfig (sensitive) |
-| kube_admin_config_raw | Admin kubeconfig (sensitive) |
-| identity_principal_id | System identity principal ID |
-| kubelet_identity_object_id | Kubelet identity object ID |
-| oidc_issuer_url | OIDC issuer URL |
-| node_resource_group | Node resource group name |
+| `cluster_id` | AKS cluster resource ID |
+| `cluster_name` | AKS cluster name |
+| `kube_config_raw` | Raw kubeconfig (sensitive) |
+| `oidc_issuer_url` | OIDC issuer URL for Workload Identity |
