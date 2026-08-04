@@ -6,7 +6,7 @@ Provisions a production-ready AWS VPC with public and private subnets across mul
 
 ```hcl
 module "vpc" {
-  source = "github.com/your-org/terraform-enterprise-modules//modules/aws/vpc?ref=v1.0.0"
+  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/aws/vpc?ref=v1.1.0"
 
   name    = "my-app"
   project = "my-project"
@@ -43,9 +43,19 @@ module "vpc" {
 
 ## Inputs
 
-<!-- terraform-docs: BEGIN -->
-See `variables.tf` for full variable descriptions and defaults.
-<!-- terraform-docs: END -->
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| name | VPC name prefix | `string` | — | yes |
+| project | Project tag | `string` | — | yes |
+| cidr_block | VPC CIDR | `string` | `10.0.0.0/16` | no |
+| azs | Availability zones | `list(string)` | — | yes |
+| public_subnet_cidrs | Public subnet CIDRs | `list(string)` | — | yes |
+| private_subnet_cidrs | Private subnet CIDRs | `list(string)` | — | yes |
+| enable_nat_gateway | Create NAT Gateways | `bool` | `true` | no |
+| single_nat_gateway | One NAT GW for all AZs | `bool` | `false` | no |
+| enable_vpc_flow_logs | Enable VPC Flow Logs | `bool` | `true` | no |
+| environment | Environment tag | `string` | `production` | no |
+| tags | Additional tags | `map(string)` | `{}` | no |
 
 ## Outputs
 

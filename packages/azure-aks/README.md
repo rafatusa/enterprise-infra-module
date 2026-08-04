@@ -1,7 +1,7 @@
-# package: azure-aks
+# Package: azure-aks
 
 **Production-ready Azure AKS environment** — a single module reference that
-automatically provisions the full stack:
+automatically provisions the full stack in dependency order:
 
 | Layer | Resources |
 |-------|-----------|
@@ -16,7 +16,7 @@ automatically provisions the full stack:
 
 ```hcl
 module "aks_env" {
-  source = "github.com/your-org/terraform-enterprise-modules//packages/azure-aks?ref=v1.0.0"
+  source = "github.com/rafatusa/terraform-enterprise-modules//infra/packages/azure-aks?ref=v1.1.0"
 
   cluster_name        = "platform-aks"
   resource_group_name = "platform-aks-rg"
@@ -84,13 +84,28 @@ resource "azurerm_role_assignment" "acr_pull" {
 
 ## Outputs
 
-`resource_group_name`, `resource_group_id`,
-`vnet_id`, `vnet_name`, `system_subnet_id`, `user_subnet_id`,
-`log_analytics_workspace_id`, `log_analytics_workspace_name`,
-`aks_identity_id`, `aks_identity_principal_id`, `aks_identity_client_id`,
-`cluster_id`, `cluster_name`, `cluster_fqdn`, `cluster_private_fqdn`,
-`kube_config_raw`, `kube_admin_config_raw`,
-`oidc_issuer_url`, `kubelet_identity_object_id`, `node_resource_group`
+| Name | Description |
+|------|-------------|
+| `resource_group_name` | Resource group name |
+| `resource_group_id` | Resource group ID |
+| `vnet_id` | VNet ID |
+| `vnet_name` | VNet name |
+| `system_subnet_id` | System pool subnet ID |
+| `user_subnet_id` | User pool subnet ID |
+| `log_analytics_workspace_id` | Log Analytics workspace ID |
+| `log_analytics_workspace_name` | Log Analytics workspace name |
+| `aks_identity_id` | Managed identity resource ID |
+| `aks_identity_principal_id` | Managed identity principal ID |
+| `aks_identity_client_id` | Managed identity client ID |
+| `cluster_id` | AKS cluster resource ID |
+| `cluster_name` | AKS cluster name |
+| `cluster_fqdn` | API server FQDN |
+| `cluster_private_fqdn` | Private API server FQDN |
+| `kube_config_raw` | kubeconfig (sensitive) |
+| `kube_admin_config_raw` | Admin kubeconfig (sensitive) |
+| `oidc_issuer_url` | OIDC issuer URL |
+| `kubelet_identity_object_id` | Kubelet identity object ID |
+| `node_resource_group` | Node resource group name |
 
 ## Security defaults
 

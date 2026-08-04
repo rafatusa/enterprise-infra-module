@@ -6,7 +6,7 @@ Creates an AWS Security Group with dynamic ingress and egress rules defined as s
 
 ```hcl
 module "app_sg" {
-  source = "github.com/your-org/terraform-enterprise-modules//modules/aws/security-group?ref=v1.0.0"
+  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/aws/security-group?ref=v1.1.0"
 
   name    = "my-app-sg"
   vpc_id  = module.vpc.vpc_id
@@ -28,5 +28,35 @@ module "app_sg" {
       description        = "App port from ALB"
     }
   ]
+
+  egress_rules = [
+    {
+      from_port   = 0
+      to_port     = 0
+      protocol    = "-1"
+      cidr_blocks = ["0.0.0.0/0"]
+      description = "Allow all outbound"
+    }
+  ]
 }
 ```
+
+## Inputs
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| name | Security group name | `string` | — | yes |
+| vpc_id | VPC to create the SG in | `string` | — | yes |
+| project | Project tag | `string` | — | yes |
+| description | SG description | `string` | `Managed by Terraform` | no |
+| environment | Environment tag | `string` | `production` | no |
+| ingress_rules | Ingress rule list | `list(object)` | `[]` | no |
+| egress_rules | Egress rule list | `list(object)` | `[allow all]` | no |
+| tags | Additional tags | `map(string)` | `{}` | no |
+
+## Outputs
+
+| Name | Description |
+|------|-------------|
+| `security_group_id` | Security group ID |
+| `security_group_arn` | Security group ARN |

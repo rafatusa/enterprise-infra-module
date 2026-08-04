@@ -6,7 +6,7 @@ Creates an Azure Virtual Network with configurable subnets, DNS servers, service
 
 ```hcl
 module "vnet" {
-  source = "github.com/org/terraform-enterprise-modules//modules/azure/vnet?ref=v1.0.0"
+  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/azure/vnet?ref=v1.1.0"
 
   name                = "myapp-vnet"
   resource_group_name = module.rg.name
@@ -38,14 +38,14 @@ module "vnet" {
 | dns_servers | Custom DNS servers | `list(string)` | `[]` | no |
 | subnets | Subnet definitions map | `map(object)` | `{}` | no |
 | project | Project tag | `string` | — | yes |
-| environment | Environment tag | `string` | `"production"` | no |
+| environment | Environment tag | `string` | `production` | no |
 | tags | Additional tags | `map(string)` | `{}` | no |
 
 ## Outputs
 
 | Name | Description |
 |------|-------------|
-| vnet_id | VNet resource ID |
-| vnet_name | VNet name |
-| subnet_ids | Map of subnet name → ID |
-| subnet_address_prefixes | Map of subnet name → address prefixes |
+| `vnet_id` | VNet resource ID |
+| `vnet_name` | VNet name |
+| `subnet_ids` | Map of subnet name → ID |
+| `subnet_address_prefixes` | Map of subnet name → address prefixes |

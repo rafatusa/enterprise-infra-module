@@ -1,4 +1,4 @@
-# azure/managed-identity
+# Module: azure/managed-identity
 
 Creates a **User Assigned Managed Identity** with optional RBAC role assignments.
 
@@ -9,7 +9,7 @@ without managing credentials — assign roles via `role_assignments` input.
 
 ```hcl
 module "identity" {
-  source = "github.com/your-org/terraform-enterprise-modules//modules/azure/managed-identity?ref=v1.0.0"
+  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/azure/managed-identity?ref=v1.1.0"
 
   name                = "my-aks-identity"
   resource_group_name = module.rg.name
@@ -43,8 +43,8 @@ module "identity" {
 
 | Name | Description |
 |------|-------------|
-| id | Resource ID of the identity |
-| name | Name of the identity |
-| principal_id | Principal (object) ID — used for RBAC |
-| client_id | Client ID — used by workloads |
-| tenant_id | Tenant ID |
+| `id` | Resource ID of the identity |
+| `name` | Name of the identity |
+| `principal_id` | Principal (object) ID — used for RBAC |
+| `client_id` | Client ID — used by workloads |
+| `tenant_id` | Tenant ID |

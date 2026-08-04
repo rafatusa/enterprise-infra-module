@@ -1,7 +1,7 @@
-# package: aws-eks
+# Package: aws-eks
 
 **Production-ready AWS EKS environment** — a single module reference that
-automatically provisions the full stack:
+automatically provisions the full stack in dependency order:
 
 | Layer | Resources |
 |-------|-----------|
@@ -15,7 +15,7 @@ automatically provisions the full stack:
 
 ```hcl
 module "eks_env" {
-  source = "github.com/your-org/terraform-enterprise-modules//packages/aws-eks?ref=v1.0.0"
+  source = "github.com/rafatusa/terraform-enterprise-modules//infra/packages/aws-eks?ref=v1.1.0"
 
   cluster_name    = "platform-eks"
   cluster_version = "1.29"
@@ -50,9 +50,12 @@ module "eks_env" {
   }
 }
 
-# Consume outputs for app modules:
-output "kubeconfig_endpoint" {
+# Consume outputs downstream
+output "cluster_endpoint" {
   value = module.eks_env.cluster_endpoint
+}
+output "vpc_id" {
+  value = module.eks_env.vpc_id
 }
 ```
 
@@ -75,12 +78,22 @@ output "kubeconfig_endpoint" {
 
 ## Outputs
 
-`vpc_id`, `private_subnet_ids`, `public_subnet_ids`,
-`cluster_id`, `cluster_name`, `cluster_endpoint`, `cluster_ca_certificate`,
-`oidc_provider_arn`, `oidc_provider_url`,
-`cluster_role_arn`, `node_role_arn`,
-`kms_key_arn`, `kms_key_id`,
-`cloudwatch_log_group_name`
+| Name | Description |
+|------|-------------|
+| `vpc_id` | VPC ID |
+| `private_subnet_ids` | Private subnet IDs |
+| `public_subnet_ids` | Public subnet IDs |
+| `cluster_id` | EKS cluster ID |
+| `cluster_name` | EKS cluster name |
+| `cluster_endpoint` | API server endpoint |
+| `cluster_ca_certificate` | Cluster CA (base64) |
+| `oidc_provider_arn` | OIDC provider ARN |
+| `oidc_provider_url` | OIDC issuer URL |
+| `cluster_role_arn` | Cluster service role ARN |
+| `node_role_arn` | Node group role ARN |
+| `kms_key_arn` | KMS key ARN |
+| `kms_key_id` | KMS key ID |
+| `cloudwatch_log_group_name` | Log group name |
 
 ## Security defaults
 

@@ -8,12 +8,12 @@ Creates an AWS EKS cluster with managed node groups, CloudWatch control plane lo
 
 ```hcl
 module "eks" {
-  source = "github.com/your-org/terraform-enterprise-modules//modules/aws/eks?ref=v1.0.0"
+  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/aws/eks?ref=v1.1.0"
 
-  cluster_name      = "my-app-eks"
+  cluster_name       = "my-app-eks"
   kubernetes_version = "1.33"
-  project           = "my-project"
-  environment       = "production"
+  project            = "my-project"
+  environment        = "production"
 
   vpc_id             = module.vpc.vpc_id
   private_subnet_ids = module.vpc.private_subnet_ids
@@ -38,6 +38,34 @@ module "eks" {
   }
 }
 ```
+
+## Inputs
+
+| Name | Description | Type | Default | Required |
+|------|-------------|------|---------|----------|
+| cluster_name | EKS cluster name | `string` | — | yes |
+| kubernetes_version | Kubernetes version | `string` | `1.29` | no |
+| project | Project tag | `string` | — | yes |
+| environment | Environment tag | `string` | `production` | no |
+| vpc_id | VPC ID | `string` | — | yes |
+| private_subnet_ids | Private subnet IDs | `list(string)` | — | yes |
+| cluster_role_arn | EKS cluster service role ARN | `string` | — | yes |
+| node_role_arn | Node group IAM role ARN | `string` | — | yes |
+| kms_key_arn | KMS key ARN for secrets encryption | `string` | `null` | no |
+| node_groups | Node group definitions | `map(object)` | `{general={…}}` | no |
+| log_retention_days | CloudWatch log retention | `number` | `90` | no |
+| tags | Additional tags | `map(string)` | `{}` | no |
+
+## Outputs
+
+| Name | Description |
+|------|-------------|
+| `cluster_name` | EKS cluster name |
+| `cluster_endpoint` | API server endpoint |
+| `cluster_ca_certificate` | CA certificate (base64) |
+| `cluster_arn` | Cluster ARN |
+| `oidc_provider_arn` | OIDC provider ARN for IRSA |
+| `oidc_provider_url` | OIDC issuer URL |
 
 ## Security Notes
 

@@ -6,7 +6,7 @@ Creates an Azure Network Security Group with configurable rules and optional sub
 
 ```hcl
 module "nsg" {
-  source = "github.com/org/terraform-enterprise-modules//modules/azure/nsg?ref=v1.0.0"
+  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/azure/nsg?ref=v1.1.0"
 
   name                = "aks-nsg"
   resource_group_name = module.rg.name
@@ -41,12 +41,12 @@ module "nsg" {
 | security_rules | Security rule list | `list(object)` | `[]` | no |
 | subnet_ids | Subnets to associate | `list(string)` | `[]` | no |
 | project | Project tag | `string` | — | yes |
-| environment | Environment tag | `string` | `"production"` | no |
+| environment | Environment tag | `string` | `production` | no |
 | tags | Additional tags | `map(string)` | `{}` | no |
 
 ## Outputs
 
 | Name | Description |
 |------|-------------|
-| nsg_id | NSG resource ID |
-| nsg_name | NSG name |
+| `nsg_id` | NSG resource ID |
+| `nsg_name` | NSG name |

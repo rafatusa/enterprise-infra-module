@@ -1,4 +1,4 @@
-# azure/log-analytics
+# Module: azure/log-analytics
 
 Creates an **Azure Log Analytics Workspace** with optional solutions for
 Container Insights (AKS) and VM Insights.
@@ -7,7 +7,7 @@ Container Insights (AKS) and VM Insights.
 
 ```hcl
 module "logs" {
-  source = "github.com/your-org/terraform-enterprise-modules//modules/azure/log-analytics?ref=v1.0.0"
+  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/azure/log-analytics?ref=v1.1.0"
 
   name                      = "platform-logs"
   resource_group_name       = module.rg.name
@@ -30,7 +30,7 @@ module "logs" {
 | resource_group_name | Resource group | `string` | — | yes |
 | location | Azure region | `string` | — | yes |
 | sku | Pricing SKU | `string` | `PerGB2018` | no |
-| retention_in_days | Log retention (30-730 days) | `number` | `90` | no |
+| retention_in_days | Log retention (30–730 days) | `number` | `90` | no |
 | daily_quota_gb | Ingestion cap in GB (-1 = unlimited) | `number` | `-1` | no |
 | internet_ingestion_enabled | Allow public ingestion | `bool` | `true` | no |
 | internet_query_enabled | Allow public queries | `bool` | `true` | no |
@@ -43,8 +43,8 @@ module "logs" {
 
 | Name | Description |
 |------|-------------|
-| id | Resource ID |
-| name | Workspace name |
-| workspace_id | Globally unique workspace ID |
-| primary_shared_key | Primary ingestion key (sensitive) |
-| secondary_shared_key | Secondary ingestion key (sensitive) |
+| `id` | Resource ID |
+| `name` | Workspace name |
+| `workspace_id` | Globally unique workspace ID |
+| `primary_shared_key` | Primary ingestion key (sensitive) |
+| `secondary_shared_key` | Secondary ingestion key (sensitive) |
