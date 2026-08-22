@@ -2,6 +2,9 @@
 
 A production-grade, multi-cloud Infrastructure-as-Code (IaC) module library providing reusable Terraform modules for AWS and Azure.
 
+> **This repo is a module library — it does not deploy infrastructure itself.**
+> Consumers pin to a release tag and source individual modules into their own vending projects.
+
 ---
 
 ## Module Catalogue
@@ -36,9 +39,11 @@ A production-grade, multi-cloud Infrastructure-as-Code (IaC) module library prov
 
 ---
 
-## Usage — Vending Project Pattern
+## Module Versioning & Consumption
 
-Pin to a release tag in your vending project:
+Modules are versioned via Git tags (`v1.0.0`, `v1.1.0`, …). Pin to a tag in your consuming project so you always get a stable, auditable snapshot.
+
+### Source pattern
 
 ```hcl
 module "vpc" {
@@ -63,9 +68,45 @@ module "ec2" {
 }
 ```
 
-### Local example consumer
+The double-slash (`//`) separates the repo from the module subdirectory path — this is Terraform's required syntax for Git sources.
 
-`infra/` is a working example that wires all AWS modules together. Run it with:
+### Available versions
+
+See [Releases](https://github.com/rafatusa/enterprise-infra-module/releases) for the full changelog.
+
+---
+
+## Releasing a New Version
+
+1. **Bump the version** — edit the `VERSION` file at the repo root:
+   ```
+   1.1.0
+   ```
+2. **Commit and push** to `main`:
+   ```bash
+   git add VERSION
+   git commit -m "chore: bump version to v1.1.0"
+   git push
+   ```
+3. **Trigger the release workflow** — in GitHub go to:
+   **Actions → Release → Run workflow → Run workflow**
+
+   The workflow will:
+   - Verify the tag `v1.1.0` does not already exist
+   - Create an annotated Git tag `v1.1.0`
+   - Publish a GitHub Release with auto-generated notes
+
+4. **Consumers update their `ref`**:
+   ```hcl
+   source = "github.com/rafatusa/enterprise-infra-module//infra/modules/aws/vpc?ref=v1.1.0"
+   ```
+   then run `terraform init -upgrade` to pull the new module version.
+
+---
+
+## Local Example Consumer
+
+`infra/` is a reference implementation that wires all AWS modules together. It is **not deployed by this repo's pipeline** — it exists to validate module references and serve as a copy-paste starting point.
 
 ```bash
 cd infra/
@@ -74,38 +115,42 @@ terraform init \
   -backend-config="key=enterprise-infra-module/terraform.tfstate" \
   -backend-config="region=us-east-1"
 
-terraform plan -var="project_name=demo" -var="ssh_public_key=$(cat ~/.ssh/id_rsa.pub)"
-terraform apply
+terraform plan \
+  -var="project_name=demo" \
+  -var="ssh_public_key=$(cat ~/.ssh/id_rsa.pub)"
 ```
+
+---
+
+## CI/CD Pipeline
+
+Every push to `main` runs the full validation suite. **No cloud resources are provisioned by this pipeline.**
+
+| Stage | Kind | What it does |
+|---|---|---|
+| `lint` | lint | `terraform fmt` check + TFLint (AWS plugin) on all modules |
+| `security` | security | tfsec + checkov against all modules |
+| `validate` | provision | `terraform init -backend=false` + `terraform validate` on the example consumer |
+| `docs-check` | configure | Asserts every module has `main.tf`, `variables.tf`, `outputs.tf`, `README.md` |
+| `verify` | verify | Prints a pass summary |
+| `nightly-scan` | scheduled | Deep tfsec + checkov sweep + terraform-docs regeneration (02:00 UTC) |
+| `release` | manual dispatch | Creates annotated git tag + GitHub Release from `VERSION` file |
 
 ---
 
 ## Security
 
 - All resources are tagged with `Project`, `Environment`, and `ManagedBy=terraform`.
-- S3 buckets have public-access block enabled and SSE-S3/KMS encryption.
+- S3 buckets have public-access block enabled and SSE-KMS encryption.
 - RDS instances are deployed in private subnets with deletion protection enabled.
 - **SSH access:** the example `infra/` consumer opens port 22 to `0.0.0.0/0` by default. Set `allowed_ssh_cidrs` to restrict this in production, or use AWS SSM Session Manager and remove port 22 entirely.
 - Security scans run on every push (tfsec, checkov) and nightly.
 
 ---
 
-## CI/CD
-
-| Stage | What it does |
-|---|---|
-| `lint` | tflint (AWS + Azure plugins), terraform fmt check |
-| `security` | tfsec + checkov against all modules |
-| `provision` | `terraform init` + `terraform apply` on `infra/` |
-| `configure` | Ansible playbook for host configuration |
-| `verify` | SSH reachability check on the deployed EC2 host |
-| `nightly-scan` | Scheduled tfsec + checkov sweep (02:00 UTC) |
-
----
-
 ## Contributing
 
 1. Add new modules under `infra/modules/<cloud>/<name>/` with `main.tf`, `variables.tf`, `outputs.tf`, and `README.md`.
-2. Run `terraform-docs` to regenerate the module `README.md`.
-3. All modules must include a `terraform {}` required_providers block.
-4. Tag releases with `vX.Y.Z` for consumers to pin to.
+2. Run `terraform-docs markdown table --output-file README.md infra/modules/<cloud>/<name>/` to generate the module README.
+3. All modules must pass `tflint` and `checkov` — run the CI pipeline to verify.
+4. To ship: bump `VERSION`, merge to `main`, trigger the **Release** workflow.

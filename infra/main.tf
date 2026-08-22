@@ -1,8 +1,18 @@
 # =============================================================================
-# enterprise-infra-module -- example consumer root
-# Calls modules from this repo directly; a vending project can replace these
-# sources with a versioned Git ref, e.g.:
+# EXAMPLE CONSUMER — NOT A DEPLOY TARGET
+#
+# This root module is a reference implementation that wires all modules in
+# this library together. It is used by the CI pipeline to run
+# `terraform validate` (syntax + reference checks only — no resources are
+# ever created from this repo).
+#
+# CONSUMING THIS LIBRARY
+# In your own vending project, replace the local sources with a pinned
+# Git ref so you get a stable, auditable snapshot:
+#
 #   source = "github.com/rafatusa/enterprise-infra-module//infra/modules/aws/vpc?ref=v1.0.0"
+#
+# See the repo README for full usage examples.
 # =============================================================================
 
 terraform {

@@ -12,11 +12,7 @@ jobs:
     - name: Install tools
       run: pip install checkov
     - name: Full checkov scan
-      run: 'mkdir -p reports
-
-        checkov -d infra/modules
-
-        '
+      run: checkov -d infra/modules
     - name: Install tfsec
       run: 'wget -q -O /usr/local/bin/tfsec https://github.com/aquasecurity/tfsec/releases/download/v1.28.11/tfsec-linux-amd64
 

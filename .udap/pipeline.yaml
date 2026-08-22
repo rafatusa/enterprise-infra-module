@@ -14,20 +14,20 @@ stages:
           terraform_version: "1.9.0"
       - name: Install tflint
         run: curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
-      - name: tflint init
-        run: tflint --init --config="$(pwd)/.tflint.hcl"
       - name: Terraform format check
         run: terraform fmt -check -recursive infra/modules/
+      - name: tflint init
+        run: tflint --init --config="$(pwd)/.tflint.hcl"
       - name: Lint AWS modules
         run: |
           for dir in infra/modules/aws/*/; do
-            echo "Linting $dir"
+            echo "==> Linting $dir"
             tflint --chdir="$dir" --config="$(pwd)/.tflint.hcl"
           done
       - name: Lint Azure modules
         run: |
           for dir in infra/modules/azure/*/; do
-            echo "Linting $dir"
+            echo "==> Linting $dir"
             tflint --chdir="$dir" --config="$(pwd)/.tflint.hcl"
           done
 
@@ -49,43 +49,11 @@ stages:
       - name: tfsec modules
         run: tfsec infra/modules --soft-fail
 
-  - id: provision
+  - id: validate
     kind: provision
     needs: [lint, security]
-    timeout_minutes: 30
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION: us-east-1
-      TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
-      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
-    steps:
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.9.0"
-      - name: Terraform Init
-        working-directory: infra
-        run: |
-          terraform init -input=false -reconfigure \
-            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
-            -backend-config="key=${{ secrets.PROJECT_NAME }}/terraform.tfstate" \
-            -backend-config="region=us-east-1"
-      - name: Terraform Plan
-        working-directory: infra
-        run: terraform plan -input=false
-      - name: Terraform Apply
-        working-directory: infra
-        run: terraform apply -auto-approve -input=false
-
-  - id: configure
-    kind: configure
-    needs: [provision]
     timeout_minutes: 20
     env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION: us-east-1
       TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
       TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
     steps:
@@ -93,94 +61,64 @@ stages:
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.9.0"
-      - name: Get instance IP
-        id: get_ip
+      - name: Terraform init (no backend - validation only)
         working-directory: infra
+        run: terraform init -backend=false -input=false
+      - name: Terraform validate
+        working-directory: infra
+        run: terraform validate
+
+  - id: docs-check
+    kind: configure
+    needs: [validate]
+    timeout_minutes: 10
+    steps:
+      - name: Verify module file structure
         run: |
-          terraform init -input=false -reconfigure \
-            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
-            -backend-config="key=${{ secrets.PROJECT_NAME }}/terraform.tfstate" \
-            -backend-config="region=us-east-1"
-          echo "ip=$(terraform output -raw instance_public_ip)" >> "$GITHUB_OUTPUT"
-      - name: Install Ansible
-        run: pip install ansible
-      - name: Write SSH key
-        env:
-          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          HOST: ${{ steps.get_ip.outputs.ip }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
-      - name: Run Ansible playbook
-        env:
-          HOST: ${{ steps.get_ip.outputs.ip }}
-        run: |
-          ansible-playbook -i "$HOST," \
-            --private-key ~/.ssh/deploy_key \
-            -u ${{ secrets.SSH_USER }} \
-            ansible/playbook.yml
+          missing=0
+          for mod in infra/modules/aws/*/ infra/modules/azure/*/; do
+            [ -d "$mod" ] || continue
+            for f in main.tf variables.tf outputs.tf README.md; do
+              if [ ! -f "${mod}${f}" ]; then
+                echo "MISSING: ${mod}${f}"
+                missing=1
+              fi
+            done
+          done
+          if [ "$missing" -eq 1 ]; then
+            echo "One or more required module files are missing."
+            exit 1
+          fi
+          echo "All modules have main.tf, variables.tf, outputs.tf, and README.md."
 
   - id: verify
     kind: verify
-    needs: [provision, configure]
-    timeout_minutes: 15
-    env:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION: us-east-1
-      TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
-      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+    needs: [docs-check]
+    timeout_minutes: 5
     steps:
-      - name: Setup Terraform
-        uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "1.9.0"
-      - name: Check module structure
+      - name: All checks passed
         run: |
-          echo "=== AWS modules ==="
-          for mod in infra/modules/aws/*/; do
-            [ -f "${mod}main.tf" ]      && echo "OK ${mod}main.tf"      || (echo "MISSING ${mod}main.tf" && exit 1)
-            [ -f "${mod}variables.tf" ] && echo "OK ${mod}variables.tf" || (echo "MISSING ${mod}variables.tf" && exit 1)
-            [ -f "${mod}outputs.tf" ]   && echo "OK ${mod}outputs.tf"   || (echo "MISSING ${mod}outputs.tf" && exit 1)
-          done
-          echo "=== Azure modules ==="
-          for mod in infra/modules/azure/*/; do
-            [ -f "${mod}main.tf" ]      && echo "OK ${mod}main.tf"      || (echo "MISSING ${mod}main.tf" && exit 1)
-            [ -f "${mod}variables.tf" ] && echo "OK ${mod}variables.tf" || (echo "MISSING ${mod}variables.tf" && exit 1)
-            [ -f "${mod}outputs.tf" ]   && echo "OK ${mod}outputs.tf"   || (echo "MISSING ${mod}outputs.tf" && exit 1)
-          done
-      - name: Get instance IP
-        id: get_ip
-        working-directory: infra
-        run: |
-          terraform init -input=false -reconfigure \
-            -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
-            -backend-config="key=${{ secrets.PROJECT_NAME }}/terraform.tfstate" \
-            -backend-config="region=us-east-1"
-          echo "ip=$(terraform output -raw instance_public_ip)" >> "$GITHUB_OUTPUT"
-      - name: Write SSH key
-        env:
-          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-          HOST: ${{ steps.get_ip.outputs.ip }}
-        run: |
-          mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
-      - name: SSH connectivity check
-        env:
-          HOST: ${{ steps.get_ip.outputs.ip }}
-        run: |
-          ssh -i ~/.ssh/deploy_key \
-            -o StrictHostKeyChecking=no \
-            -o ConnectTimeout=10 \
-            ${{ secrets.SSH_USER }}@$HOST \
-            "echo 'SSH OK' && uptime"
+          echo "============================================"
+          echo " enterprise-infra-module: all checks passed"
+          echo "  - Lint    : OK"
+          echo "  - Security: OK"
+          echo "  - Validate: OK"
+          echo "  - Docs    : OK"
+          echo "============================================"
+          echo "Modules are ready for consumption."
+          echo "To release a new version, update the VERSION"
+          echo "file and trigger the release workflow."
 
 rollback:
-  strategy: manual
+  strategy: none
+
+destroy:
+  steps:
+    - name: No infrastructure to destroy
+      run: |
+        echo "This is a Terraform module library repo."
+        echo "No infrastructure is deployed from this repo directly."
+        echo "Consumers own their own state and destroy their own resources."
 
 pipelines:
   - id: nightly-scan
@@ -193,9 +131,7 @@ pipelines:
           - name: Install tools
             run: pip install checkov
           - name: Full checkov scan
-            run: |
-              mkdir -p reports
-              checkov -d infra/modules
+            run: checkov -d infra/modules
           - name: Install tfsec
             run: |
               wget -q -O /usr/local/bin/tfsec https://github.com/aquasecurity/tfsec/releases/download/v1.28.11/tfsec-linux-amd64
@@ -222,3 +158,47 @@ pipelines:
               for mod in infra/modules/azure/*/; do
                 terraform-docs markdown table --output-file README.md "$mod"
               done
+
+  - id: release
+    stages:
+      - id: tag-and-release
+        kind: custom
+        timeout_minutes: 10
+        steps:
+          - name: Read VERSION
+            id: read_version
+            run: |
+              VERSION=$(cat VERSION)
+              echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+              echo "Releasing v${VERSION}"
+          - name: Check tag does not already exist
+            env:
+              GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            run: |
+              VERSION=$(cat VERSION)
+              if git ls-remote --tags origin "refs/tags/v${VERSION}" | grep -q "v${VERSION}"; then
+                echo "ERROR: Tag v${VERSION} already exists."
+                echo "Bump the VERSION file and re-trigger this workflow."
+                exit 1
+              fi
+              echo "Tag v${VERSION} is new. Proceeding."
+          - name: Configure git identity
+            run: |
+              git config user.name "github-actions[bot]"
+              git config user.email "github-actions[bot]@users.noreply.github.com"
+          - name: Create and push annotated tag
+            env:
+              GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            run: |
+              VERSION=$(cat VERSION)
+              git tag -a "v${VERSION}" -m "Release v${VERSION}"
+              git push origin "v${VERSION}"
+          - name: Create GitHub Release
+            env:
+              GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            run: |
+              VERSION=$(cat VERSION)
+              gh release create "v${VERSION}" \
+                --title "v${VERSION}" \
+                --generate-notes \
+                --latest
