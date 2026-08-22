@@ -160,11 +160,24 @@ stages:
             -backend-config="key=${{ secrets.PROJECT_NAME }}/terraform.tfstate" \
             -backend-config="region=us-east-1"
           echo "ip=$(terraform output -raw instance_public_ip)" >> "$GITHUB_OUTPUT"
-      - name: Health check
+      - name: Write SSH key
+        env:
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          HOST: ${{ steps.get_ip.outputs.ip }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
+      - name: SSH connectivity check
         env:
           HOST: ${{ steps.get_ip.outputs.ip }}
         run: |
-          curl --fail --retry 10 --retry-delay 15 --retry-all-errors "http://$HOST/"
+          ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -o ConnectTimeout=10 \
+            ${{ secrets.SSH_USER }}@$HOST \
+            "echo 'SSH OK' && uptime"
 
 rollback:
   strategy: manual
