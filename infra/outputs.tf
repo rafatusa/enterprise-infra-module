@@ -23,6 +23,11 @@ output "ec2_public_ip" {
   value       = module.ec2.public_ip
 }
 
+output "instance_public_ip" {
+  description = "Public IP of the EC2 instance (alias used by configure/verify stages)"
+  value       = module.ec2.public_ip
+}
+
 output "ec2_private_ip" {
   description = "Private IP of the EC2 instance"
   value       = module.ec2.private_ip
@@ -48,9 +53,9 @@ output "s3_bucket_id" {
   value       = module.s3.bucket_id
 }
 
-output "cloudwatch_log_group_names" {
-  description = "CloudWatch log group names"
-  value       = module.cloudwatch.log_group_names
+output "cloudwatch_log_group_name" {
+  description = "CloudWatch log group name"
+  value       = module.cloudwatch.log_group_name
 }
 
 output "iam_role_arn" {
