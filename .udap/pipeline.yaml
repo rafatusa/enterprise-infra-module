@@ -14,17 +14,19 @@ stages:
           terraform_version: "1.9.0"
       - name: Install tflint
         run: curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
+      - name: tflint init
+        run: tflint --init --config="$(pwd)/.tflint.hcl"
       - name: Terraform format check
-        run: terraform fmt -check -recursive modules/
+        run: terraform fmt -check -recursive infra/modules/
       - name: Lint AWS modules
         run: |
-          for dir in modules/aws/*/; do
+          for dir in infra/modules/aws/*/; do
             echo "Linting $dir"
             tflint --chdir="$dir" --config="$(pwd)/.tflint.hcl"
           done
       - name: Lint Azure modules
         run: |
-          for dir in modules/azure/*/; do
+          for dir in infra/modules/azure/*/; do
             echo "Linting $dir"
             tflint --chdir="$dir" --config="$(pwd)/.tflint.hcl"
           done
@@ -37,15 +39,15 @@ stages:
       - name: Install checkov
         run: pip install checkov
       - name: Checkov AWS modules
-        run: checkov -d modules/aws --soft-fail
+        run: checkov -d infra/modules/aws --soft-fail
       - name: Checkov Azure modules
-        run: checkov -d modules/azure --soft-fail
+        run: checkov -d infra/modules/azure --soft-fail
       - name: Install tfsec
         run: |
           wget -q -O /usr/local/bin/tfsec https://github.com/aquasecurity/tfsec/releases/download/v1.28.11/tfsec-linux-amd64
           chmod +x /usr/local/bin/tfsec
       - name: tfsec modules
-        run: tfsec modules --soft-fail
+        run: tfsec infra/modules --soft-fail
 
   - id: provision
     kind: provision
@@ -138,13 +140,13 @@ stages:
       - name: Check module structure
         run: |
           echo "=== AWS modules ==="
-          for mod in modules/aws/*/; do
+          for mod in infra/modules/aws/*/; do
             [ -f "${mod}main.tf" ]      && echo "OK ${mod}main.tf"      || (echo "MISSING ${mod}main.tf" && exit 1)
             [ -f "${mod}variables.tf" ] && echo "OK ${mod}variables.tf" || (echo "MISSING ${mod}variables.tf" && exit 1)
             [ -f "${mod}outputs.tf" ]   && echo "OK ${mod}outputs.tf"   || (echo "MISSING ${mod}outputs.tf" && exit 1)
           done
           echo "=== Azure modules ==="
-          for mod in modules/azure/*/; do
+          for mod in infra/modules/azure/*/; do
             [ -f "${mod}main.tf" ]      && echo "OK ${mod}main.tf"      || (echo "MISSING ${mod}main.tf" && exit 1)
             [ -f "${mod}variables.tf" ] && echo "OK ${mod}variables.tf" || (echo "MISSING ${mod}variables.tf" && exit 1)
             [ -f "${mod}outputs.tf" ]   && echo "OK ${mod}outputs.tf"   || (echo "MISSING ${mod}outputs.tf" && exit 1)
@@ -180,13 +182,13 @@ pipelines:
           - name: Full checkov scan
             run: |
               mkdir -p reports
-              checkov -d modules
+              checkov -d infra/modules
           - name: Install tfsec
             run: |
               wget -q -O /usr/local/bin/tfsec https://github.com/aquasecurity/tfsec/releases/download/v1.28.11/tfsec-linux-amd64
               chmod +x /usr/local/bin/tfsec
           - name: Full tfsec scan
-            run: tfsec modules
+            run: tfsec infra/modules
       - id: generate-docs
         kind: custom
         needs: [deep-security]
@@ -199,11 +201,11 @@ pipelines:
               mv terraform-docs /usr/local/bin/
           - name: Generate AWS module docs
             run: |
-              for mod in modules/aws/*/; do
+              for mod in infra/modules/aws/*/; do
                 terraform-docs markdown table --output-file README.md "$mod"
               done
           - name: Generate Azure module docs
             run: |
-              for mod in modules/azure/*/; do
+              for mod in infra/modules/azure/*/; do
                 terraform-docs markdown table --output-file README.md "$mod"
               done

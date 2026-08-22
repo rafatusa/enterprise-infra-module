@@ -16,14 +16,16 @@ jobs:
     - name: Install tflint
       run: curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh
         | bash
+    - name: tflint init
+      run: tflint --init --config="$(pwd)/.tflint.hcl"
     - name: Terraform format check
-      run: terraform fmt -check -recursive modules/
+      run: terraform fmt -check -recursive infra/modules/
     - name: Lint AWS modules
-      run: "for dir in modules/aws/*/; do\n  echo \"Linting $dir\"\n  tflint --chdir=\"\
-        $dir\" --config=\"$(pwd)/.tflint.hcl\"\ndone\n"
+      run: "for dir in infra/modules/aws/*/; do\n  echo \"Linting $dir\"\n  tflint\
+        \ --chdir=\"$dir\" --config=\"$(pwd)/.tflint.hcl\"\ndone\n"
     - name: Lint Azure modules
-      run: "for dir in modules/azure/*/; do\n  echo \"Linting $dir\"\n  tflint --chdir=\"\
-        $dir\" --config=\"$(pwd)/.tflint.hcl\"\ndone\n"
+      run: "for dir in infra/modules/azure/*/; do\n  echo \"Linting $dir\"\n  tflint\
+        \ --chdir=\"$dir\" --config=\"$(pwd)/.tflint.hcl\"\ndone\n"
   security:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -32,9 +34,9 @@ jobs:
     - name: Install checkov
       run: pip install checkov
     - name: Checkov AWS modules
-      run: checkov -d modules/aws --soft-fail
+      run: checkov -d infra/modules/aws --soft-fail
     - name: Checkov Azure modules
-      run: checkov -d modules/azure --soft-fail
+      run: checkov -d infra/modules/azure --soft-fail
     - name: Install tfsec
       run: 'wget -q -O /usr/local/bin/tfsec https://github.com/aquasecurity/tfsec/releases/download/v1.28.11/tfsec-linux-amd64
 
@@ -42,7 +44,7 @@ jobs:
 
         '
     - name: tfsec modules
-      run: tfsec modules --soft-fail
+      run: tfsec infra/modules --soft-fail
   provision:
     runs-on: ubuntu-latest
     needs:
@@ -136,15 +138,15 @@ jobs:
       with:
         terraform_version: 1.9.0
     - name: Check module structure
-      run: "echo \"=== AWS modules ===\"\nfor mod in modules/aws/*/; do\n  [ -f \"\
-        ${mod}main.tf\" ]      && echo \"OK ${mod}main.tf\"      || (echo \"MISSING\
-        \ ${mod}main.tf\" && exit 1)\n  [ -f \"${mod}variables.tf\" ] && echo \"OK\
-        \ ${mod}variables.tf\" || (echo \"MISSING ${mod}variables.tf\" && exit 1)\n\
-        \  [ -f \"${mod}outputs.tf\" ]   && echo \"OK ${mod}outputs.tf\"   || (echo\
-        \ \"MISSING ${mod}outputs.tf\" && exit 1)\ndone\necho \"=== Azure modules\
-        \ ===\"\nfor mod in modules/azure/*/; do\n  [ -f \"${mod}main.tf\" ]     \
-        \ && echo \"OK ${mod}main.tf\"      || (echo \"MISSING ${mod}main.tf\" &&\
-        \ exit 1)\n  [ -f \"${mod}variables.tf\" ] && echo \"OK ${mod}variables.tf\"\
+      run: "echo \"=== AWS modules ===\"\nfor mod in infra/modules/aws/*/; do\n  [\
+        \ -f \"${mod}main.tf\" ]      && echo \"OK ${mod}main.tf\"      || (echo \"\
+        MISSING ${mod}main.tf\" && exit 1)\n  [ -f \"${mod}variables.tf\" ] && echo\
+        \ \"OK ${mod}variables.tf\" || (echo \"MISSING ${mod}variables.tf\" && exit\
+        \ 1)\n  [ -f \"${mod}outputs.tf\" ]   && echo \"OK ${mod}outputs.tf\"   ||\
+        \ (echo \"MISSING ${mod}outputs.tf\" && exit 1)\ndone\necho \"=== Azure modules\
+        \ ===\"\nfor mod in infra/modules/azure/*/; do\n  [ -f \"${mod}main.tf\" ]\
+        \      && echo \"OK ${mod}main.tf\"      || (echo \"MISSING ${mod}main.tf\"\
+        \ && exit 1)\n  [ -f \"${mod}variables.tf\" ] && echo \"OK ${mod}variables.tf\"\
         \ || (echo \"MISSING ${mod}variables.tf\" && exit 1)\n  [ -f \"${mod}outputs.tf\"\
         \ ]   && echo \"OK ${mod}outputs.tf\"   || (echo \"MISSING ${mod}outputs.tf\"\
         \ && exit 1)\ndone\n"

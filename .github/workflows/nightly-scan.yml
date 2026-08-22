@@ -14,7 +14,7 @@ jobs:
     - name: Full checkov scan
       run: 'mkdir -p reports
 
-        checkov -d modules
+        checkov -d infra/modules
 
         '
     - name: Install tfsec
@@ -24,7 +24,7 @@ jobs:
 
         '
     - name: Full tfsec scan
-      run: tfsec modules
+      run: tfsec infra/modules
   generate-docs:
     runs-on: ubuntu-latest
     needs:
@@ -41,8 +41,8 @@ jobs:
 
         '
     - name: Generate AWS module docs
-      run: "for mod in modules/aws/*/; do\n  terraform-docs markdown table --output-file\
+      run: "for mod in infra/modules/aws/*/; do\n  terraform-docs markdown table --output-file\
         \ README.md \"$mod\"\ndone\n"
     - name: Generate Azure module docs
-      run: "for mod in modules/azure/*/; do\n  terraform-docs markdown table --output-file\
-        \ README.md \"$mod\"\ndone\n"
+      run: "for mod in infra/modules/azure/*/; do\n  terraform-docs markdown table\
+        \ --output-file README.md \"$mod\"\ndone\n"
