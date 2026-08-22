@@ -1,12 +1,12 @@
 # enterprise-infra-module
 
-A production-grade, multi-cloud Infrastructure-as-Code (IaC) module library providing reusable Terraform modules for AWS and Azure, with a parallel Pulumi (Go) implementation.
+A production-grade, multi-cloud Infrastructure-as-Code (IaC) module library providing reusable Terraform modules for AWS and Azure.
 
 ---
 
 ## Module Catalogue
 
-### AWS Modules (`modules/aws/`)
+### AWS Modules (`infra/modules/aws/`)
 
 | Module | Description | Key Resources |
 |---|---|---|
@@ -17,13 +17,13 @@ A production-grade, multi-cloud Infrastructure-as-Code (IaC) module library prov
 | `eks` | EKS cluster with managed node group | `aws_eks_cluster`, `aws_eks_node_group` |
 | `s3` | S3 bucket with versioning, encryption, public-access block | `aws_s3_bucket` |
 | `alb` | Application Load Balancer with target group and listeners | `aws_lb`, `aws_lb_listener` |
-| `elasticache` | ElastiCache Redis cluster with subnet group | `aws_elasticache_cluster` |
+| `elasticache` | ElastiCache Redis cluster with subnet group | `aws_elasticache_replication_group` |
 | `iam` | IAM user/group/policy management | `aws_iam_user`, `aws_iam_policy` |
 | `iam-role` | IAM role with instance profile and policy attachments | `aws_iam_role`, `aws_iam_instance_profile` |
 | `kms` | KMS customer-managed key with rotation | `aws_kms_key`, `aws_kms_alias` |
 | `cloudwatch` | CloudWatch log groups with configurable retention | `aws_cloudwatch_log_group` |
 
-### Azure Modules (`modules/azure/`)
+### Azure Modules (`infra/modules/azure/`)
 
 | Module | Description | Key Resources |
 |---|---|---|
@@ -42,18 +42,18 @@ Pin to a release tag in your vending project:
 
 ```hcl
 module "vpc" {
-  source = "github.com/rafatusa/enterprise-infra-module//modules/aws/vpc?ref=v1.0.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/modules/aws/vpc?ref=v1.0.0"
 
   project_name         = "my-app"
   environment          = "prod"
   vpc_cidr             = "10.0.0.0/16"
   public_subnet_cidrs  = ["10.0.1.0/24", "10.0.2.0/24"]
-  private_subnet_cidrs = ["10.0.10.0/24", "10.0.11.0/24"]
+  private_subnet_cidrs = ["10.0.10.0/24", "10.0.20.0/24"]
   azs                  = ["us-east-1a", "us-east-1b"]
 }
 
 module "ec2" {
-  source = "github.com/rafatusa/enterprise-infra-module//modules/aws/ec2?ref=v1.0.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/modules/aws/ec2?ref=v1.0.0"
 
   project_name       = "my-app"
   environment        = "prod"
@@ -80,20 +80,6 @@ terraform apply
 
 ---
 
-## Pulumi (Go) Implementation
-
-A parallel Pulumi implementation lives in `pulumi/` covering the same module surface area. It targets Go 1.21+ and Pulumi SDK v3.
-
-```bash
-cd pulumi/
-go mod tidy
-pulumi up
-```
-
-> **Note:** The Pulumi VPC component currently creates the VPC and Internet Gateway. Subnet, route table and NAT Gateway implementation is in progress.
-
----
-
 ## Security
 
 - All resources are tagged with `Project`, `Environment`, and `ManagedBy=terraform`.
@@ -108,18 +94,18 @@ pulumi up
 
 | Stage | What it does |
 |---|---|
-| `lint` | tflint (AWS + Azure + GCP plugins), terraform fmt check |
+| `lint` | tflint (AWS + Azure plugins), terraform fmt check |
 | `security` | tfsec + checkov against all modules |
 | `provision` | `terraform init` + `terraform apply` on `infra/` |
 | `configure` | Ansible playbook for host configuration |
-| `verify` | Health-check the deployed EC2 host |
+| `verify` | SSH reachability check on the deployed EC2 host |
 | `nightly-scan` | Scheduled tfsec + checkov sweep (02:00 UTC) |
 
 ---
 
 ## Contributing
 
-1. Add new modules under `modules/<cloud>/<name>/` with `main.tf`, `variables.tf`, `outputs.tf`.
+1. Add new modules under `infra/modules/<cloud>/<name>/` with `main.tf`, `variables.tf`, `outputs.tf`, and `README.md`.
 2. Run `terraform-docs` to regenerate the module `README.md`.
 3. All modules must include a `terraform {}` required_providers block.
 4. Tag releases with `vX.Y.Z` for consumers to pin to.
