@@ -1,5 +1,5 @@
 # =============================================================================
-# enterprise-infra-module — example consumer root
+# enterprise-infra-module -- example consumer root
 # Calls modules from this repo directly; a vending project can replace these
 # sources with a versioned Git ref, e.g.:
 #   source = "github.com/rafatusa/enterprise-infra-module//infra/modules/aws/vpc?ref=v1.0.0"
@@ -9,7 +9,7 @@ terraform {
   backend "s3" {}
 }
 
-# ── VPC ─────────────────────────────────────────────────────────────────────
+# -- VPC ---------------------------------------------------------------------
 
 module "vpc" {
   source = "./modules/aws/vpc"
@@ -22,7 +22,7 @@ module "vpc" {
   azs                  = var.azs
 }
 
-# ── Security Group ───────────────────────────────────────────────────────────
+# -- Security Group ----------------------------------------------------------
 
 module "security_group" {
   source = "./modules/aws/security-group"
@@ -52,7 +52,7 @@ module "security_group" {
       to_port     = 22
       protocol    = "tcp"
       cidr_blocks = length(var.allowed_ssh_cidrs) > 0 ? var.allowed_ssh_cidrs : ["0.0.0.0/0"]
-      description = "SSH — restrict allowed_ssh_cidrs in production"
+      description = "SSH - restrict allowed_ssh_cidrs in production"
     }
   ]
 
@@ -67,7 +67,7 @@ module "security_group" {
   ]
 }
 
-# ── IAM Role ─────────────────────────────────────────────────────────────────
+# -- IAM Role ----------------------------------------------------------------
 
 module "iam_role" {
   source = "./modules/aws/iam-role"
@@ -81,7 +81,7 @@ module "iam_role" {
   ]
 }
 
-# ── EC2 ──────────────────────────────────────────────────────────────────────
+# -- EC2 ---------------------------------------------------------------------
 
 module "ec2" {
   source = "./modules/aws/ec2"
@@ -95,7 +95,7 @@ module "ec2" {
   iam_instance_profile = module.iam_role.instance_profile_name
 }
 
-# ── KMS ──────────────────────────────────────────────────────────────────────
+# -- KMS ---------------------------------------------------------------------
 
 module "kms" {
   source = "./modules/aws/kms"
@@ -106,7 +106,7 @@ module "kms" {
   description  = "KMS key for ${var.project_name} ${var.environment} encryption"
 }
 
-# ── S3 ───────────────────────────────────────────────────────────────────────
+# -- S3 ----------------------------------------------------------------------
 
 module "s3" {
   source = "./modules/aws/s3"
@@ -116,7 +116,7 @@ module "s3" {
   kms_key_arn  = module.kms.key_arn
 }
 
-# ── CloudWatch ───────────────────────────────────────────────────────────────
+# -- CloudWatch --------------------------------------------------------------
 
 module "cloudwatch" {
   source = "./modules/aws/cloudwatch"
