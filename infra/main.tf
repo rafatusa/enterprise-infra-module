@@ -1,78 +1,58 @@
-###############################################################################
-# infra/main.tf
-# ec2-from-modules — EC2 instance provisioned via enterprise module library
-#
-# Inputs:  var.project_name, var.aws_region  (the only two inputs required)
-# Modules: vpc + ec2 + security-group sourced from terraform-enterprise-modules
-###############################################################################
+# =============================================================================
+# enterprise-infra-module — example consumer root
+# Calls modules from this repo directly; a vending project can replace these
+# sources with a versioned Git ref, e.g.:
+#   source = "github.com/rafatusa/enterprise-infra-module//infra/modules/aws/vpc?ref=v1.0.0"
+# =============================================================================
 
 terraform {
-  required_version = ">= 1.9.0"
-
   backend "s3" {}
-
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
 }
 
-provider "aws" {
-  region = var.aws_region
-}
+# ── VPC ─────────────────────────────────────────────────────────────────────
 
-###############################################################################
-# VPC — single AZ, one public subnet (minimal; extend via package for HA)
-###############################################################################
 module "vpc" {
-  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/aws/vpc?ref=v1.0.0"
+  source = "./modules/aws/vpc"
 
-  name    = var.project_name
-  project = var.project_name
-
-  azs                  = ["${var.aws_region}a"]
-  public_subnet_cidrs  = ["10.0.1.0/24"]
-  private_subnet_cidrs = ["10.0.10.0/24"]
-
-  enable_nat_gateway   = false   # single public subnet — no NAT needed
-  single_nat_gateway   = true
-  enable_dns_hostnames = true
-  enable_dns_support   = true
-
-  tags = {
-    Project     = var.project_name
-    Environment = "production"
-    ManagedBy   = "terraform"
-    ConsumedBy  = "ec2-from-modules"
-  }
+  project_name         = var.project_name
+  environment          = var.environment
+  vpc_cidr             = var.vpc_cidr
+  public_subnet_cidrs  = var.public_subnet_cidrs
+  private_subnet_cidrs = var.private_subnet_cidrs
+  azs                  = var.azs
 }
 
-###############################################################################
-# Security Group — SSH (22) + HTTP (80) inbound
-###############################################################################
-module "sg" {
-  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/aws/security-group?ref=v1.0.0"
+# ── Security Group ───────────────────────────────────────────────────────────
 
-  name    = "${var.project_name}-ec2-sg"
-  project = var.project_name
-  vpc_id  = module.vpc.vpc_id
+module "security_group" {
+  source = "./modules/aws/security-group"
+
+  project_name = var.project_name
+  environment  = var.environment
+  vpc_id       = module.vpc.vpc_id
+  name         = "app"
 
   ingress_rules = [
-    {
-      from_port   = 22
-      to_port     = 22
-      protocol    = "tcp"
-      cidr_blocks = ["0.0.0.0/0"]
-      description = "SSH access"
-    },
     {
       from_port   = 80
       to_port     = 80
       protocol    = "tcp"
       cidr_blocks = ["0.0.0.0/0"]
-      description = "HTTP access"
+      description = "HTTP"
+    },
+    {
+      from_port   = 443
+      to_port     = 443
+      protocol    = "tcp"
+      cidr_blocks = ["0.0.0.0/0"]
+      description = "HTTPS"
+    },
+    {
+      from_port   = 22
+      to_port     = 22
+      protocol    = "tcp"
+      cidr_blocks = length(var.allowed_ssh_cidrs) > 0 ? var.allowed_ssh_cidrs : ["0.0.0.0/0"]
+      description = "SSH — restrict allowed_ssh_cidrs in production"
     }
   ]
 
@@ -82,83 +62,66 @@ module "sg" {
       to_port     = 0
       protocol    = "-1"
       cidr_blocks = ["0.0.0.0/0"]
-      description = "All outbound"
+      description = "Allow all egress"
     }
   ]
-
-  tags = {
-    Project     = var.project_name
-    Environment = "production"
-    ManagedBy   = "terraform"
-  }
 }
 
-###############################################################################
-# EC2 Instance
-###############################################################################
+# ── IAM Role ─────────────────────────────────────────────────────────────────
+
+module "iam_role" {
+  source = "./modules/aws/iam-role"
+
+  project_name        = var.project_name
+  environment         = var.environment
+  role_name_suffix    = "ec2"
+  assume_role_service = "ec2.amazonaws.com"
+  managed_policy_arns = [
+    "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+  ]
+}
+
+# ── EC2 ──────────────────────────────────────────────────────────────────────
+
 module "ec2" {
-  source = "github.com/rafatusa/terraform-enterprise-modules//infra/modules/aws/ec2?ref=v1.0.0"
+  source = "./modules/aws/ec2"
 
-  name      = var.project_name
-  project   = var.project_name
-  subnet_id = module.vpc.public_subnet_ids[0]
-  vpc_id    = module.vpc.vpc_id
-
-  instance_type          = "t3.micro"
-  ami_id                 = data.aws_ami.ubuntu.id
-  key_name               = aws_key_pair.deploy.key_name
-  vpc_security_group_ids = [module.sg.security_group_id]
-  associate_public_ip    = true
-
-  root_volume_size = 20
-  root_volume_type = "gp3"
-
-  user_data = base64encode(<<-EOF
-    #!/bin/bash
-    apt-get update -y
-    apt-get install -y nginx
-    systemctl enable nginx
-    systemctl start nginx
-    echo "<h1>${var.project_name} — deployed via terraform-enterprise-modules</h1>" \
-      > /var/www/html/index.html
-  EOF
-  )
-
-  tags = {
-    Project     = var.project_name
-    Environment = "production"
-    ManagedBy   = "terraform"
-    ConsumedBy  = "ec2-from-modules"
-  }
+  project_name         = var.project_name
+  environment          = var.environment
+  subnet_id            = module.vpc.public_subnet_ids[0]
+  security_group_ids   = [module.security_group.security_group_id]
+  instance_type        = var.ec2_instance_type
+  ssh_public_key       = var.ssh_public_key
+  iam_instance_profile = module.iam_role.instance_profile_name
 }
 
-###############################################################################
-# Latest Ubuntu 22.04 LTS AMI
-###############################################################################
-data "aws_ami" "ubuntu" {
-  most_recent = true
-  owners      = ["099720109477"] # Canonical
+# ── KMS ──────────────────────────────────────────────────────────────────────
 
-  filter {
-    name   = "name"
-    values = ["ubuntu/images/hvm-ssd/ubuntu-jammy-22.04-amd64-server-*"]
-  }
+module "kms" {
+  source = "./modules/aws/kms"
 
-  filter {
-    name   = "virtualization-type"
-    values = ["hvm"]
-  }
+  project_name = var.project_name
+  environment  = var.environment
+  key_name     = "app"
+  description  = "KMS key for ${var.project_name} ${var.environment} encryption"
 }
 
-###############################################################################
-# Key Pair — injected from platform secret
-###############################################################################
-resource "aws_key_pair" "deploy" {
-  key_name   = "${var.project_name}-deploy-key"
-  public_key = var.ssh_public_key
+# ── S3 ───────────────────────────────────────────────────────────────────────
 
-  tags = {
-    Project   = var.project_name
-    ManagedBy = "terraform"
-  }
+module "s3" {
+  source = "./modules/aws/s3"
+
+  project_name = var.project_name
+  environment  = var.environment
+  kms_key_arn  = module.kms.key_arn
+}
+
+# ── CloudWatch ───────────────────────────────────────────────────────────────
+
+module "cloudwatch" {
+  source = "./modules/aws/cloudwatch"
+
+  project_name   = var.project_name
+  environment    = var.environment
+  log_group_name = "app"
 }

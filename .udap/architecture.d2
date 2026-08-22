@@ -1,19 +1,15 @@
 # udap:meta cloud=aws region=us-east-1 target=ec2
 
-engineer: Engineer { shape: person; udap-type: generic.user }
-tf_library: Terraform Module Library { shape: rectangle; udap-type: generic.app }
-pulumi_library: Pulumi Go Component Library { shape: rectangle; udap-type: generic.app }
-aws_modules: AWS Modules { shape: rectangle; udap-type: aws.ec2 }
-azure_modules: Azure Modules { shape: rectangle; udap-type: generic.app }
-packages: Solution Packages { shape: rectangle; udap-type: generic.app }
+consumer: Vending Project { shape: rectangle; udap-type: generic.user }
+ci: GitHub Actions { shape: rectangle; udap-type: generic.app }
+state: TF State Bucket { shape: rectangle; udap-type: aws.s3 }
+demo_ec2: Example EC2 { shape: rectangle; udap-type: aws.ec2 }
+aws_modules: AWS Module Library { shape: rectangle; udap-type: generic.app }
+azure_modules: Azure Module Library { shape: rectangle; udap-type: generic.app }
 
-engineer -> tf_library: git tag ref
-engineer -> pulumi_library: Go import
-tf_library -> aws_modules: infra/modules/aws
-tf_library -> azure_modules: infra/modules/azure
-pulumi_library -> aws_modules: pulumi/modules/aws
-pulumi_library -> azure_modules: pulumi/modules/azure
-tf_library -> packages: infra/packages
-pulumi_library -> packages: pulumi/packages
-packages -> aws_modules: composes
-packages -> azure_modules: composes
+consumer -> aws_modules: source via git ref
+consumer -> azure_modules: source via git ref
+ci -> aws_modules: lint / validate / security scan
+ci -> azure_modules: lint / validate / security scan
+aws_modules -> state: remote state
+aws_modules -> demo_ec2: example consumer

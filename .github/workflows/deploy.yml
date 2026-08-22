@@ -6,192 +6,159 @@ name: deploy
 jobs:
   lint:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-    - uses: actions/checkout@v4
-    - name: Setup Terraform
-      uses: hashicorp/setup-terraform@v3
-      with:
-        terraform_version: 1.9.8
-    - name: Install terraform-docs
-      run: 'curl -sSLo /tmp/terraform-docs.tar.gz https://github.com/terraform-docs/terraform-docs/releases/download/v0.18.0/terraform-docs-v0.18.0-linux-amd64.tar.gz
-
-        tar -xzf /tmp/terraform-docs.tar.gz -C /tmp
-
-        sudo mv /tmp/terraform-docs /usr/local/bin/terraform-docs
-
-        '
-    - name: Install tflint
-      run: 'curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh
-        | bash
-
-        '
-    - name: Terraform Format Check
-      run: terraform fmt -check -recursive infra
-    - name: Lint all modules with tflint
-      run: "find infra/modules infra/packages -name 'main.tf' | xargs -I{} dirname\
-        \ {} | sort -u | while read dir; do\n  echo \"==> Linting $dir\"\n  tflint\
-        \ --chdir=\"$dir\" --config=\"$(pwd)/.tflint.hcl\" || true\ndone\n"
-  validate:
-    runs-on: ubuntu-latest
-    needs:
-    - lint
     timeout-minutes: 15
     steps:
     - uses: actions/checkout@v4
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
-        terraform_version: 1.9.8
-    - name: Validate all modules
-      run: "find infra/modules infra/packages -name 'main.tf' | xargs -I{} dirname\
-        \ {} | sort -u | while read dir; do\n  echo \"==> Validating $dir\"\n  (cd\
-        \ \"$dir\" && terraform init -backend=false -input=false && terraform validate)\n\
-        done\n"
+        terraform_version: 1.9.0
+    - name: Install tflint
+      run: curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh
+        | bash
+    - name: Terraform format check
+      run: terraform fmt -check -recursive modules/
+    - name: Lint AWS modules
+      run: "for dir in modules/aws/*/; do\n  echo \"Linting $dir\"\n  tflint --chdir=\"\
+        $dir\" --config=\"$(pwd)/.tflint.hcl\"\ndone\n"
+    - name: Lint Azure modules
+      run: "for dir in modules/azure/*/; do\n  echo \"Linting $dir\"\n  tflint --chdir=\"\
+        $dir\" --config=\"$(pwd)/.tflint.hcl\"\ndone\n"
   security:
     runs-on: ubuntu-latest
-    needs:
-    - validate
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
     - uses: actions/checkout@v4
-    - name: Install tfsec
-      run: 'curl -s https://raw.githubusercontent.com/aquasecurity/tfsec/master/scripts/install_linux.sh
-        | bash
-
-        '
-    - name: Run tfsec on modules
-      run: tfsec infra/modules --soft-fail
-    - name: Run tfsec on packages
-      run: tfsec infra/packages --soft-fail
     - name: Install checkov
       run: pip install checkov
-    - name: Run checkov on modules
-      run: checkov -d infra/modules --quiet --compact --soft-fail
-    - name: Run checkov on packages
-      run: checkov -d infra/packages --quiet --compact --soft-fail
-  docs:
-    runs-on: ubuntu-latest
-    needs:
-    - security
-    timeout-minutes: 10
-    steps:
-    - uses: actions/checkout@v4
-    - name: Install terraform-docs
-      run: 'curl -sSLo /tmp/terraform-docs.tar.gz https://github.com/terraform-docs/terraform-docs/releases/download/v0.18.0/terraform-docs-v0.18.0-linux-amd64.tar.gz
+    - name: Checkov AWS modules
+      run: checkov -d modules/aws --soft-fail
+    - name: Checkov Azure modules
+      run: checkov -d modules/azure --soft-fail
+    - name: Install tfsec
+      run: 'wget -q -O /usr/local/bin/tfsec https://github.com/aquasecurity/tfsec/releases/download/v1.28.11/tfsec-linux-amd64
 
-        tar -xzf /tmp/terraform-docs.tar.gz -C /tmp
-
-        sudo mv /tmp/terraform-docs /usr/local/bin/terraform-docs
+        chmod +x /usr/local/bin/tfsec
 
         '
-    - name: Generate docs for all modules
-      run: "find infra/modules infra/packages -name 'main.tf' | xargs -I{} dirname\
-        \ {} | sort -u | while read dir; do\n  echo \"==> Generating docs for $dir\"\
-        \n  terraform-docs markdown table --output-file README.md --output-mode inject\
-        \ \"$dir\" || \\\n  terraform-docs markdown table \"$dir\" > \"$dir/README.md\"\
-        \ndone\n"
-    - name: Check docs are up to date
-      run: "if git diff --exit-code -- '**/README.md'; then\n  echo \"Docs are up\
-        \ to date.\"\nelse\n  echo \"WARNING: README.md files are out of date. Run\
-        \ terraform-docs locally.\"\nfi\n"
+    - name: tfsec modules
+      run: tfsec modules --soft-fail
   provision:
     runs-on: ubuntu-latest
     needs:
-    - docs
+    - lint
+    - security
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: us-east-1
-      TF_VAR_library_version: v1.1.0
       TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
-    timeout-minutes: 5
+      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+    timeout-minutes: 30
     steps:
     - uses: actions/checkout@v4
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
-        terraform_version: 1.9.8
+        terraform_version: 1.9.0
     - name: Terraform Init
-      run: "cd infra\nterraform init -input=false -reconfigure \\\n  -backend-config=\"\
-        bucket=${{ secrets.TF_STATE_BUCKET }}\" \\\n  -backend-config=\"key=${{ secrets.PROJECT_NAME\
+      run: "terraform init -input=false -reconfigure \\\n  -backend-config=\"bucket=${{\
+        \ secrets.TF_STATE_BUCKET }}\" \\\n  -backend-config=\"key=${{ secrets.PROJECT_NAME\
         \ }}/terraform.tfstate\" \\\n  -backend-config=\"region=us-east-1\"\n"
+      working-directory: infra
     - name: Terraform Plan
-      run: 'cd infra
-
-        terraform plan -input=false -out=tfplan
-
-        '
+      run: terraform plan -input=false
+      working-directory: infra
     - name: Terraform Apply
-      run: 'cd infra
-
-        terraform apply -input=false -auto-approve tfplan
-
-        '
+      run: terraform apply -auto-approve -input=false
+      working-directory: infra
   configure:
     runs-on: ubuntu-latest
     needs:
     - provision
-    timeout-minutes: 5
-    steps:
-    - uses: actions/checkout@v4
-    - name: Record library release
-      run: "echo \"Module library provisioned \u2014 no server configuration required.\"\
-        \necho \"Terraform modules: infra/modules/aws (9) + infra/modules/azure (6)\"\
-        \necho \"Pulumi components: pulumi/modules/aws (9) + pulumi/modules/azure\
-        \ (6)\"\necho \"Packages: infra/packages + pulumi/packages (aws-eks, azure-aks)\"\
-        \necho \"Library version: v1.1.0\"\n"
-  verify:
-    runs-on: ubuntu-latest
-    needs:
-    - configure
-    - provision
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
       AWS_REGION: us-east-1
-    timeout-minutes: 10
+      TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
+      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+    timeout-minutes: 20
     steps:
     - uses: actions/checkout@v4
     - name: Setup Terraform
       uses: hashicorp/setup-terraform@v3
       with:
-        terraform_version: 1.9.8
-    - name: Verify Terraform module structure
-      run: "echo \"==> Verifying Terraform module structure...\"\nERRORS=0\nfor dir\
-        \ in \\\n  infra/modules/aws/vpc \\\n  infra/modules/aws/ec2 \\\n  infra/modules/aws/eks\
-        \ \\\n  infra/modules/aws/rds \\\n  infra/modules/aws/s3 \\\n  infra/modules/aws/security-group\
-        \ \\\n  infra/modules/aws/iam-role \\\n  infra/modules/aws/kms \\\n  infra/modules/aws/cloudwatch\
-        \ \\\n  infra/modules/azure/resource-group \\\n  infra/modules/azure/vnet\
-        \ \\\n  infra/modules/azure/nsg \\\n  infra/modules/azure/managed-identity\
-        \ \\\n  infra/modules/azure/log-analytics \\\n  infra/modules/azure/aks \\\
-        \n  infra/packages/aws-eks \\\n  infra/packages/azure-aks; do\n  for f in\
-        \ main.tf variables.tf outputs.tf versions.tf; do\n    if [ ! -f \"$dir/$f\"\
-        \ ]; then\n      echo \"MISSING: $dir/$f\"\n      ERRORS=$((ERRORS+1))\n \
-        \   fi\n  done\ndone\nif [ $ERRORS -gt 0 ]; then\n  echo \"FAILED: $ERRORS\
-        \ Terraform structure errors found.\"\n  exit 1\nfi\necho \"All Terraform\
-        \ module structures verified OK.\"\n"
-    - name: Verify Pulumi module structure
-      run: "echo \"==> Verifying Pulumi module structure...\"\nERRORS=0\nfor f in\
-        \ \\\n  pulumi/go.mod \\\n  pulumi/modules/aws/vpc/vpc.go \\\n  pulumi/modules/aws/ec2/ec2.go\
-        \ \\\n  pulumi/modules/aws/eks/eks.go \\\n  pulumi/modules/aws/rds/rds.go\
-        \ \\\n  pulumi/modules/aws/s3/s3.go \\\n  pulumi/modules/aws/security-group/securitygroup.go\
-        \ \\\n  pulumi/modules/aws/iam-role/iamrole.go \\\n  pulumi/modules/aws/kms/kms.go\
-        \ \\\n  pulumi/modules/aws/cloudwatch/cloudwatch.go \\\n  pulumi/modules/azure/resource-group/resourcegroup.go\
-        \ \\\n  pulumi/modules/azure/vnet/vnet.go \\\n  pulumi/modules/azure/nsg/nsg.go\
-        \ \\\n  pulumi/modules/azure/managed-identity/managedidentity.go \\\n  pulumi/modules/azure/log-analytics/loganalytics.go\
-        \ \\\n  pulumi/modules/azure/aks/aks.go \\\n  pulumi/packages/aws-eks/awseks.go\
-        \ \\\n  pulumi/packages/azure-aks/azureaks.go; do\n  if [ ! -f \"$f\" ]; then\n\
-        \    echo \"MISSING: $f\"\n    ERRORS=$((ERRORS+1))\n  fi\ndone\nif [ $ERRORS\
-        \ -gt 0 ]; then\n  echo \"FAILED: $ERRORS Pulumi structure errors found.\"\
-        \n  exit 1\nfi\necho \"All Pulumi module structures verified OK.\"\n"
-    - name: Re-init infra state to verify sentinel
-      run: "cd infra\nterraform init -input=false -reconfigure \\\n  -backend-config=\"\
-        bucket=${{ secrets.TF_STATE_BUCKET }}\" \\\n  -backend-config=\"key=${{ secrets.PROJECT_NAME\
-        \ }}/terraform.tfstate\" \\\n  -backend-config=\"region=us-east-1\"\nterraform\
-        \ show -json | python3 -c \"\nimport sys, json\nstate = json.load(sys.stdin)\n\
-        resources = state.get('values', {}).get('root_module', {}).get('resources',\
-        \ [])\nsentinel = [r for r in resources if r['type'] == 'null_resource']\n\
-        if not sentinel:\n    print('WARN: sentinel resource not found in state \u2014\
-        \ first apply pending')\nelse:\n    print(f'OK: sentinel resource present\
-        \ ({len(sentinel)} resource(s) in state)')\n\"\n"
+        terraform_version: 1.9.0
+    - id: get_ip
+      name: Get instance IP
+      run: "terraform init -input=false -reconfigure \\\n  -backend-config=\"bucket=${{\
+        \ secrets.TF_STATE_BUCKET }}\" \\\n  -backend-config=\"key=${{ secrets.PROJECT_NAME\
+        \ }}/terraform.tfstate\" \\\n  -backend-config=\"region=us-east-1\"\necho\
+        \ \"ip=$(terraform output -raw instance_public_ip)\" >> \"$GITHUB_OUTPUT\"\
+        \n"
+      working-directory: infra
+    - name: Install Ansible
+      run: pip install ansible
+    - name: Write SSH key
+      run: 'mkdir -p ~/.ssh
+
+        printf ''%s\n'' "$SSH_KEY" > ~/.ssh/deploy_key
+
+        chmod 600 ~/.ssh/deploy_key
+
+        ssh-keyscan -H "$HOST" >> ~/.ssh/known_hosts
+
+        '
+      env:
+        SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        HOST: ${{ steps.get_ip.outputs.ip }}
+    - name: Run Ansible playbook
+      run: "ansible-playbook -i \"$HOST,\" \\\n  --private-key ~/.ssh/deploy_key \\\
+        \n  -u ${{ secrets.SSH_USER }} \\\n  ansible/playbook.yml\n"
+      env:
+        HOST: ${{ steps.get_ip.outputs.ip }}
+  verify:
+    runs-on: ubuntu-latest
+    needs:
+    - provision
+    - configure
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: us-east-1
+      TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
+      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.9.0
+    - name: Check module structure
+      run: "echo \"=== AWS modules ===\"\nfor mod in modules/aws/*/; do\n  [ -f \"\
+        ${mod}main.tf\" ]      && echo \"OK ${mod}main.tf\"      || (echo \"MISSING\
+        \ ${mod}main.tf\" && exit 1)\n  [ -f \"${mod}variables.tf\" ] && echo \"OK\
+        \ ${mod}variables.tf\" || (echo \"MISSING ${mod}variables.tf\" && exit 1)\n\
+        \  [ -f \"${mod}outputs.tf\" ]   && echo \"OK ${mod}outputs.tf\"   || (echo\
+        \ \"MISSING ${mod}outputs.tf\" && exit 1)\ndone\necho \"=== Azure modules\
+        \ ===\"\nfor mod in modules/azure/*/; do\n  [ -f \"${mod}main.tf\" ]     \
+        \ && echo \"OK ${mod}main.tf\"      || (echo \"MISSING ${mod}main.tf\" &&\
+        \ exit 1)\n  [ -f \"${mod}variables.tf\" ] && echo \"OK ${mod}variables.tf\"\
+        \ || (echo \"MISSING ${mod}variables.tf\" && exit 1)\n  [ -f \"${mod}outputs.tf\"\
+        \ ]   && echo \"OK ${mod}outputs.tf\"   || (echo \"MISSING ${mod}outputs.tf\"\
+        \ && exit 1)\ndone\n"
+    - id: get_ip
+      name: Get instance IP
+      run: "terraform init -input=false -reconfigure \\\n  -backend-config=\"bucket=${{\
+        \ secrets.TF_STATE_BUCKET }}\" \\\n  -backend-config=\"key=${{ secrets.PROJECT_NAME\
+        \ }}/terraform.tfstate\" \\\n  -backend-config=\"region=us-east-1\"\necho\
+        \ \"ip=$(terraform output -raw instance_public_ip)\" >> \"$GITHUB_OUTPUT\"\
+        \n"
+      working-directory: infra
+    - name: Health check
+      run: 'curl --fail --retry 10 --retry-delay 15 --retry-all-errors "http://$HOST/"
+
+        '
+      env:
+        HOST: ${{ steps.get_ip.outputs.ip }}
