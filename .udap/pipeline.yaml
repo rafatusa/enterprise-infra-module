@@ -6,7 +6,7 @@ stages:
   - id: lint
     kind: lint
     needs: []
-    timeout_minutes: 15
+    timeout_minutes: 20
     steps:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
@@ -15,18 +15,20 @@ stages:
       - name: Install tflint
         run: curl -s https://raw.githubusercontent.com/terraform-linters/tflint/master/install_linux.sh | bash
       - name: Terraform format check
-        run: terraform fmt -check -recursive infra/modules/
+        run: terraform fmt -check -recursive infra/terraform/
       - name: tflint init
         run: tflint --init --config="$(pwd)/.tflint.hcl"
-      - name: Lint AWS modules
+      - name: Lint Terraform modules
         run: |
-          for dir in infra/modules/aws/*/; do
+          for dir in infra/terraform/modules/aws/*/ infra/terraform/modules/azure/*/; do
+            [ -d "$dir" ] || continue
             echo "==> Linting $dir"
             tflint --chdir="$dir" --config="$(pwd)/.tflint.hcl"
           done
-      - name: Lint Azure modules
+      - name: Lint Terraform packages
         run: |
-          for dir in infra/modules/azure/*/; do
+          for dir in infra/terraform/packages/aws/*/ infra/terraform/packages/azure/*/; do
+            [ -d "$dir" ] || continue
             echo "==> Linting $dir"
             tflint --chdir="$dir" --config="$(pwd)/.tflint.hcl"
           done
@@ -38,58 +40,92 @@ stages:
     steps:
       - name: Install checkov
         run: pip install checkov
-      - name: Checkov AWS modules
-        run: checkov -d infra/modules/aws --soft-fail
-      - name: Checkov Azure modules
-        run: checkov -d infra/modules/azure --soft-fail
+      - name: Checkov Terraform tree
+        run: checkov -d infra/terraform --soft-fail
       - name: Install tfsec
         run: |
           wget -q -O /usr/local/bin/tfsec https://github.com/aquasecurity/tfsec/releases/download/v1.28.11/tfsec-linux-amd64
           chmod +x /usr/local/bin/tfsec
-      - name: tfsec modules
-        run: tfsec infra/modules --soft-fail
+      - name: tfsec Terraform tree
+        run: tfsec infra/terraform --soft-fail
 
   - id: validate
     kind: provision
     needs: [lint, security]
-    timeout_minutes: 20
-    env:
-      TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
-      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+    timeout_minutes: 25
     steps:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: "1.9.0"
-      - name: Terraform init (no backend - validation only)
-        working-directory: infra
-        run: terraform init -backend=false -input=false
-      - name: Terraform validate
-        working-directory: infra
-        run: terraform validate
+      - name: Validate every module and package
+        run: |
+          rc=0
+          for dir in infra/terraform/modules/aws/*/ \
+                     infra/terraform/modules/azure/*/ \
+                     infra/terraform/packages/aws/*/ \
+                     infra/terraform/packages/azure/*/; do
+            [ -d "$dir" ] || continue
+            echo "==> terraform validate $dir"
+            if ! terraform -chdir="$dir" init -backend=false -input=false >/dev/null; then
+              echo "INIT FAILED: $dir"
+              rc=1
+              continue
+            fi
+            if ! terraform -chdir="$dir" validate; then
+              echo "VALIDATE FAILED: $dir"
+              rc=1
+            fi
+          done
+          if [ "$rc" -ne 0 ]; then
+            echo "One or more Terraform directories failed validation."
+            exit 1
+          fi
+          echo "All Terraform modules and packages validated."
 
   - id: docs-check
     kind: configure
     needs: [validate]
     timeout_minutes: 10
     steps:
-      - name: Verify module file structure
+      - name: Verify Terraform file structure
         run: |
           missing=0
-          for mod in infra/modules/aws/*/ infra/modules/azure/*/; do
-            [ -d "$mod" ] || continue
+          for d in infra/terraform/modules/aws/*/ \
+                   infra/terraform/modules/azure/*/ \
+                   infra/terraform/packages/aws/*/ \
+                   infra/terraform/packages/azure/*/; do
+            [ -d "$d" ] || continue
             for f in main.tf variables.tf outputs.tf README.md; do
-              if [ ! -f "${mod}${f}" ]; then
-                echo "MISSING: ${mod}${f}"
+              if [ ! -f "${d}${f}" ]; then
+                echo "MISSING: ${d}${f}"
                 missing=1
               fi
             done
           done
           if [ "$missing" -eq 1 ]; then
-            echo "One or more required module files are missing."
+            echo "One or more required files are missing."
             exit 1
           fi
-          echo "All modules have main.tf, variables.tf, outputs.tf, and README.md."
+          echo "All modules and packages have main.tf, variables.tf, outputs.tf, README.md."
+      - name: Verify Pulumi tree layout
+        run: |
+          missing=0
+          for d in infra/pulumi/modules/aws/*/ \
+                   infra/pulumi/modules/azure/*/ \
+                   infra/pulumi/packages/aws/*/ \
+                   infra/pulumi/packages/azure/*/; do
+            [ -d "$d" ] || continue
+            if ! ls "$d"*.go >/dev/null 2>&1; then
+              echo "MISSING: no .go files in $d"
+              missing=1
+            fi
+          done
+          if [ "$missing" -eq 1 ]; then
+            echo "One or more Pulumi components have no Go sources."
+            exit 1
+          fi
+          echo "Pulumi tree layout OK."
 
   - id: verify
     kind: verify
@@ -100,14 +136,14 @@ stages:
         run: |
           echo "============================================"
           echo " enterprise-infra-module: all checks passed"
-          echo "  - Lint    : OK"
-          echo "  - Security: OK"
-          echo "  - Validate: OK"
-          echo "  - Docs    : OK"
+          echo "  - Lint     : OK"
+          echo "  - Security : OK"
+          echo "  - Validate : OK"
+          echo "  - Structure: OK"
           echo "============================================"
-          echo "Modules are ready for consumption."
-          echo "To release a new version, update the VERSION"
-          echo "file and trigger the release workflow."
+          echo "Layout: infra/{terraform,pulumi}/{modules,packages}/{aws,azure}"
+          echo "Modules and packages are ready for consumption."
+          echo "To release, update VERSION and run the release workflow."
 
 rollback:
   strategy: none
@@ -116,11 +152,69 @@ destroy:
   steps:
     - name: No infrastructure to destroy
       run: |
-        echo "This is a Terraform module library repo."
+        echo "This is an infrastructure module library repo."
         echo "No infrastructure is deployed from this repo directly."
         echo "Consumers own their own state and destroy their own resources."
 
 pipelines:
+  - id: pulumi-ci
+    stages:
+      - id: go-lint
+        kind: lint
+        needs: []
+        timeout_minutes: 15
+        steps:
+          - name: Setup Go
+            uses: actions/setup-go@v5
+            with:
+              go-version: "1.22"
+          - name: gofmt check
+            working-directory: infra/pulumi
+            run: |
+              unformatted=$(gofmt -l .)
+              if [ -n "$unformatted" ]; then
+                echo "These files are not gofmt-formatted:"
+                echo "$unformatted"
+                exit 1
+              fi
+              echo "gofmt clean."
+          - name: go vet
+            working-directory: infra/pulumi
+            run: go vet ./...
+          - name: staticcheck
+            working-directory: infra/pulumi
+            run: |
+              go install honnef.co/go/tools/cmd/staticcheck@2024.1.1
+              "$(go env GOPATH)/bin/staticcheck" ./...
+
+      - id: go-build
+        kind: build
+        needs: [go-lint]
+        timeout_minutes: 15
+        steps:
+          - name: Setup Go
+            uses: actions/setup-go@v5
+            with:
+              go-version: "1.22"
+          - name: go build
+            working-directory: infra/pulumi
+            run: go build ./...
+
+      - id: go-security
+        kind: security
+        needs: [go-build]
+        timeout_minutes: 15
+        steps:
+          - name: Setup Go
+            uses: actions/setup-go@v5
+            with:
+              go-version: "1.22"
+          - name: gosec
+            working-directory: infra/pulumi
+            run: |
+              go install github.com/securego/gosec/v2/cmd/gosec@latest
+              "$(go env GOPATH)/bin/gosec" ./...
+
   - id: nightly-scan
     stages:
       - id: deep-security
@@ -128,16 +222,16 @@ pipelines:
         needs: []
         timeout_minutes: 30
         steps:
-          - name: Install tools
+          - name: Install checkov
             run: pip install checkov
           - name: Full checkov scan
-            run: checkov -d infra/modules
+            run: checkov -d infra/terraform
           - name: Install tfsec
             run: |
               wget -q -O /usr/local/bin/tfsec https://github.com/aquasecurity/tfsec/releases/download/v1.28.11/tfsec-linux-amd64
               chmod +x /usr/local/bin/tfsec
           - name: Full tfsec scan
-            run: tfsec infra/modules
+            run: tfsec infra/terraform
       - id: generate-docs
         kind: custom
         needs: [deep-security]
@@ -148,15 +242,14 @@ pipelines:
               wget -q https://github.com/terraform-docs/terraform-docs/releases/download/v0.18.0/terraform-docs-v0.18.0-linux-amd64.tar.gz
               tar -xzf terraform-docs-v0.18.0-linux-amd64.tar.gz
               mv terraform-docs /usr/local/bin/
-          - name: Generate AWS module docs
+          - name: Generate module and package docs
             run: |
-              for mod in infra/modules/aws/*/; do
-                terraform-docs markdown table --output-file README.md "$mod"
-              done
-          - name: Generate Azure module docs
-            run: |
-              for mod in infra/modules/azure/*/; do
-                terraform-docs markdown table --output-file README.md "$mod"
+              for d in infra/terraform/modules/aws/*/ \
+                       infra/terraform/modules/azure/*/ \
+                       infra/terraform/packages/aws/*/ \
+                       infra/terraform/packages/azure/*/; do
+                [ -d "$d" ] || continue
+                terraform-docs markdown table --output-file README.md "$d"
               done
 
   - id: release

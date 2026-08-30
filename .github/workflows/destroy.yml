@@ -6,13 +6,10 @@ name: destroy
 jobs:
   destroy:
     runs-on: ubuntu-latest
-    env:
-      TF_VAR_project_name: ${{ secrets.PROJECT_NAME }}
-      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
     steps:
     - uses: actions/checkout@v4
     - name: No infrastructure to destroy
-      run: 'echo "This is a Terraform module library repo."
+      run: 'echo "This is an infrastructure module library repo."
 
         echo "No infrastructure is deployed from this repo directly."
 

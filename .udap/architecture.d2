@@ -1,15 +1,33 @@
 # udap:meta cloud=aws region=us-east-1 target=ec2
 
-consumer: Vending Project { shape: rectangle; udap-type: generic.user }
+consumer: Consuming Project { shape: rectangle; udap-type: generic.user }
 ci: GitHub Actions { shape: rectangle; udap-type: generic.app }
-state: TF State Bucket { shape: rectangle; udap-type: aws.s3 }
-demo_ec2: Example EC2 { shape: rectangle; udap-type: aws.ec2 }
-aws_modules: AWS Module Library { shape: rectangle; udap-type: generic.app }
-azure_modules: Azure Module Library { shape: rectangle; udap-type: generic.app }
+infra: infra/ {
+  tf_mod_aws: terraform/modules/aws { shape: rectangle; udap-type: generic.app }
+  tf_mod_azure: terraform/modules/azure { shape: rectangle; udap-type: generic.app }
+  tf_pkg_aws: terraform/packages/aws { shape: rectangle; udap-type: generic.app }
+  tf_pkg_azure: terraform/packages/azure { shape: rectangle; udap-type: generic.app }
+  pl_mod_aws: pulumi/modules/aws { shape: rectangle; udap-type: generic.app }
+  pl_mod_azure: pulumi/modules/azure { shape: rectangle; udap-type: generic.app }
+  pl_pkg_aws: pulumi/packages/aws { shape: rectangle; udap-type: generic.app }
+  pl_pkg_azure: pulumi/packages/azure { shape: rectangle; udap-type: generic.app }
+}
 
-consumer -> aws_modules: source via git ref
-consumer -> azure_modules: source via git ref
-ci -> aws_modules: lint / validate / security scan
-ci -> azure_modules: lint / validate / security scan
-aws_modules -> state: remote state
-aws_modules -> demo_ec2: example consumer
+consumer -> infra.tf_mod_aws: module source git ref v2
+consumer -> infra.tf_mod_azure: module source git ref v2
+consumer -> infra.tf_pkg_aws: module source git ref v2
+consumer -> infra.tf_pkg_azure: module source git ref v2
+consumer -> infra.pl_pkg_aws: go module import
+consumer -> infra.pl_pkg_azure: go module import
+infra.tf_pkg_aws -> infra.tf_mod_aws: composes
+infra.tf_pkg_azure -> infra.tf_mod_azure: composes
+infra.pl_pkg_aws -> infra.pl_mod_aws: composes
+infra.pl_pkg_azure -> infra.pl_mod_azure: composes
+ci -> infra.tf_mod_aws: fmt / tflint / validate / checkov
+ci -> infra.tf_mod_azure: fmt / tflint / validate / checkov
+ci -> infra.tf_pkg_aws: fmt / tflint / validate / checkov
+ci -> infra.tf_pkg_azure: fmt / tflint / validate / checkov
+ci -> infra.pl_mod_aws: go vet / staticcheck / gosec
+ci -> infra.pl_mod_azure: go vet / staticcheck / gosec
+ci -> infra.pl_pkg_aws: go build / gosec
+ci -> infra.pl_pkg_azure: go build / gosec
