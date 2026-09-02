@@ -1,6 +1,6 @@
 // Package loganalytics provides a Pulumi component resource for an Azure
 // Log Analytics Workspace with configurable retention and solutions.
-// Mirrors infra/modules/azure/log-analytics.
+// Mirrors infra/terraform/modules/azure/log-analytics.
 //
 // Usage:
 //
@@ -36,8 +36,10 @@ type Args struct {
 	RetentionDays pulumi.IntInput
 	// Sku is the pricing tier. Default: PerGB2018.
 	Sku pulumi.StringInput
-	// EnableContainerInsights adds the ContainerInsights solution. Default: false.
-	EnableContainerInsights pulumi.BoolInput
+	// EnableContainerInsights adds the ContainerInsights solution.
+	// Default: false. This is a plain bool because it decides whether a
+	// resource is created at all.
+	EnableContainerInsights bool
 }
 
 // Workspace is the component resource output.
@@ -45,9 +47,14 @@ type Workspace struct {
 	pulumi.ResourceState
 
 	WorkspaceName pulumi.StringOutput `pulumi:"workspaceName"`
-	WorkspaceID   pulumi.StringOutput `pulumi:"workspaceId"`
-	WorkspaceKey  pulumi.StringOutput `pulumi:"workspaceKey"`
-	CustomerID    pulumi.StringOutput `pulumi:"customerId"`
+	// WorkspaceID is the full Azure resource ID, for use in other resources
+	// such as the AKS OMS agent.
+	WorkspaceID pulumi.StringOutput `pulumi:"workspaceId"`
+	// WorkspaceKey is the primary shared key. Treat as a secret.
+	WorkspaceKey pulumi.StringOutput `pulumi:"workspaceKey"`
+	// CustomerID is the workspace GUID, for agent configuration and the
+	// Log Analytics API. This is NOT the same as WorkspaceID.
+	CustomerID pulumi.StringOutput `pulumi:"customerId"`
 }
 
 // NewWorkspace creates a new Azure Log Analytics Workspace component resource.
@@ -71,13 +78,24 @@ func NewWorkspace(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.R
 		"Module":      pulumi.String("azure/log-analytics"),
 	}
 
+	// Resolve optional inputs to their documented defaults.
+	retention := args.RetentionDays
+	if retention == nil {
+		retention = pulumi.Int(30)
+	}
+
+	sku := args.Sku
+	if sku == nil {
+		sku = pulumi.String("PerGB2018")
+	}
+
 	workspace, err := operationalinsights.NewWorkspace(ctx, fmt.Sprintf("%s-workspace", name), &operationalinsights.WorkspaceArgs{
 		WorkspaceName:     args.Name,
 		ResourceGroupName: args.ResourceGroupName,
 		Location:          args.Location,
-		RetentionInDays:   pulumi.Int(30),
+		RetentionInDays:   retention,
 		Sku: &operationalinsights.WorkspaceSkuArgs{
-			Name: pulumi.String("PerGB2018"),
+			Name: sku,
 		},
 		Tags: tags,
 	}, resourceOpts...)
@@ -85,15 +103,18 @@ func NewWorkspace(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.R
 		return nil, err
 	}
 
-	// Container Insights Solution
-	_, err = operationalinsights.NewLinkedService(ctx, fmt.Sprintf("%s-insights-link", name), &operationalinsights.LinkedServiceArgs{
-		ResourceGroupName: args.ResourceGroupName,
-		WorkspaceName:     workspace.Name,
-		LinkedServiceName: pulumi.String("ContainerInsights"),
-	}, resourceOpts...)
-	if err != nil {
-		// Non-fatal — ContainerInsights solution may not be available in all regions
-		ctx.Log.Warn(fmt.Sprintf("Could not enable ContainerInsights for %s: %v", name, err), nil)
+	// Container Insights Solution (optional)
+	if args.EnableContainerInsights {
+		_, err = operationalinsights.NewLinkedService(ctx, fmt.Sprintf("%s-insights-link", name), &operationalinsights.LinkedServiceArgs{
+			ResourceGroupName: args.ResourceGroupName,
+			WorkspaceName:     workspace.Name,
+			LinkedServiceName: pulumi.String("ContainerInsights"),
+		}, resourceOpts...)
+		if err != nil {
+			// Non-fatal: the ContainerInsights solution is not available in
+			// every region. The workspace itself is still usable.
+			ctx.Log.Warn(fmt.Sprintf("Could not enable ContainerInsights for %s: %v", name, err), nil)
+		}
 	}
 
 	sharedKeys := operationalinsights.GetSharedKeysOutput(ctx, operationalinsights.GetSharedKeysOutputArgs{
@@ -109,6 +130,7 @@ func NewWorkspace(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.R
 	ctx.RegisterResourceOutputs(component, pulumi.Map{
 		"workspaceName": component.WorkspaceName,
 		"workspaceId":   component.WorkspaceID,
+		"workspaceKey":  component.WorkspaceKey,
 		"customerId":    component.CustomerID,
 	})
 

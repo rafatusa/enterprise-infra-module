@@ -72,9 +72,11 @@ func NewEnvironment(ctx *pulumi.Context, name string, args *Args, opts ...pulumi
 
 	parentOpt := pulumi.Parent(component)
 
-	location := pulumi.String("eastus")
-	if args.Location != nil {
-		location = args.Location.(pulumi.String)
+	// Never type-assert a pulumi Input to a concrete type — callers
+	// legitimately pass Outputs from other resources, which would panic.
+	location := args.Location
+	if location == nil {
+		location = pulumi.String("eastus")
 	}
 
 	// 1. Resource Group
@@ -88,7 +90,8 @@ func NewEnvironment(ctx *pulumi.Context, name string, args *Args, opts ...pulumi
 		return nil, err
 	}
 
-	// 2. VNet with system and user subnets
+	// 2. VNet with system and user subnets. SubnetIDs is ordered to match
+	// this slice, so index 0 is the system subnet.
 	vnetComp, err := vnet.NewVirtualNetwork(ctx, fmt.Sprintf("%s-vnet", name), &vnet.Args{
 		Name:              pulumi.Sprintf("%s-vnet", args.ClusterName),
 		ResourceGroupName: rgComp.ResourceGroupName,
@@ -143,13 +146,15 @@ func NewEnvironment(ctx *pulumi.Context, name string, args *Args, opts ...pulumi
 		return nil, err
 	}
 
-	// 5. Log Analytics Workspace
+	// 5. Log Analytics Workspace. ContainerInsights is enabled explicitly
+	// because this package is Kubernetes-specific.
 	laComp, err := loganalytics.NewWorkspace(ctx, fmt.Sprintf("%s-logs", name), &loganalytics.Args{
-		Name:              pulumi.Sprintf("%s-logs", args.ClusterName),
-		ResourceGroupName: rgComp.ResourceGroupName,
-		Location:          rgComp.Location,
-		Project:           args.Project,
-		Environment:       args.Environment,
+		Name:                    pulumi.Sprintf("%s-logs", args.ClusterName),
+		ResourceGroupName:       rgComp.ResourceGroupName,
+		Location:                rgComp.Location,
+		Project:                 args.Project,
+		Environment:             args.Environment,
+		EnableContainerInsights: true,
 	}, parentOpt)
 	if err != nil {
 		return nil, err

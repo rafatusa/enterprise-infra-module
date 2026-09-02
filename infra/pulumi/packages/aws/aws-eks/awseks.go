@@ -3,7 +3,10 @@
 // vpc + security-group + iam-role + kms + s3 + eks + cloudwatch.
 //
 // Equivalent to infra/terraform/packages/aws/aws-eks but implemented as a
-// Pulumi Go component.
+// Pulumi Go component. Note the Terraform package deliberately does NOT
+// compose iam-role: its eks module creates its own cluster and node group
+// roles, so an extra role there would be dead infrastructure. This Pulumi
+// package wires one in explicitly.
 //
 // Usage:
 //
@@ -40,8 +43,9 @@ type Args struct {
 	Region pulumi.StringInput
 	// VpcCidr is the VPC CIDR block. Default: 10.0.0.0/16.
 	VpcCidr pulumi.StringInput
-	// AvailabilityZones to use. Default: first two AZs.
-	AvailabilityZones pulumi.StringArrayInput
+	// AvailabilityZones to use. Default: us-east-1a and us-east-1b.
+	// The default subnet CIDRs assume exactly two AZs.
+	AvailabilityZones []string
 	// NodeInstanceType for EKS workers. Default: t3.medium.
 	NodeInstanceType pulumi.StringInput
 	// NodeDesiredCount is the desired EKS node count. Default: 2.
@@ -62,6 +66,8 @@ type Environment struct {
 	LogGroupName pulumi.StringOutput `pulumi:"logGroupName"`
 	// StateBucketName for remote state storage.
 	StateBucketName pulumi.StringOutput `pulumi:"stateBucketName"`
+	// KmsKeyARN of the EKS secrets encryption key.
+	KmsKeyARN pulumi.StringOutput `pulumi:"kmsKeyArn"`
 }
 
 // NewEnvironment provisions a complete AWS EKS environment.
@@ -78,17 +84,22 @@ func NewEnvironment(ctx *pulumi.Context, name string, args *Args, opts ...pulumi
 
 	parentOpt := pulumi.Parent(component)
 
-	// 1. VPC
+	availabilityZones := args.AvailabilityZones
+	if len(availabilityZones) == 0 {
+		availabilityZones = []string{"us-east-1a", "us-east-1b"}
+	}
+
+	// 1. VPC. Private subnets host the EKS nodes and reach the internet
+	// through the NAT Gateway, which the cluster needs for ECR and the
+	// EKS API.
 	vpcComp, err := vpc.NewVpc(ctx, fmt.Sprintf("%s-vpc", name), &vpc.Args{
-		Name:        args.ClusterName,
-		Project:     args.Project,
-		Environment: args.Environment,
-		AvailabilityZones: pulumi.StringArray{
-			pulumi.String("us-east-1a"),
-			pulumi.String("us-east-1b"),
-		},
-		PublicSubnetCidrs:  pulumi.StringArray{pulumi.String("10.0.1.0/24"), pulumi.String("10.0.2.0/24")},
-		PrivateSubnetCidrs: pulumi.StringArray{pulumi.String("10.0.10.0/24"), pulumi.String("10.0.11.0/24")},
+		Name:               args.ClusterName,
+		Project:            args.Project,
+		Environment:        args.Environment,
+		CidrBlock:          args.VpcCidr,
+		AvailabilityZones:  availabilityZones,
+		PublicSubnetCidrs:  []string{"10.0.1.0/24", "10.0.2.0/24"},
+		PrivateSubnetCidrs: []string{"10.0.10.0/24", "10.0.11.0/24"},
 	}, parentOpt)
 	if err != nil {
 		return nil, err
@@ -104,7 +115,6 @@ func NewEnvironment(ctx *pulumi.Context, name string, args *Args, opts ...pulumi
 	if err != nil {
 		return nil, err
 	}
-	_ = kmsComp
 
 	// 3. S3 bucket for state/artifacts
 	s3Comp, err := s3.NewBucket(ctx, fmt.Sprintf("%s-s3", name), &s3.Args{
@@ -122,12 +132,12 @@ func NewEnvironment(ctx *pulumi.Context, name string, args *Args, opts ...pulumi
 		Project:           args.Project,
 		Environment:       args.Environment,
 		AssumeRoleService: pulumi.String("ec2.amazonaws.com"),
-		ManagedPolicyARNs: pulumi.StringArray{
-			pulumi.String("arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy"),
-			pulumi.String("arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"),
-			pulumi.String("arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"),
+		ManagedPolicyARNs: []string{
+			"arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
+			"arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
+			"arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly",
 		},
-		CreateInstanceProfile: pulumi.Bool(true),
+		CreateInstanceProfile: true,
 	}, parentOpt)
 	if err != nil {
 		return nil, err
@@ -161,6 +171,7 @@ func NewEnvironment(ctx *pulumi.Context, name string, args *Args, opts ...pulumi
 	component.ClusterName = eksComp.ClusterName
 	component.LogGroupName = cwComp.LogGroupName
 	component.StateBucketName = s3Comp.BucketName
+	component.KmsKeyARN = kmsComp.KeyARN
 
 	ctx.RegisterResourceOutputs(component, pulumi.Map{
 		"vpcId":           component.VpcID,
@@ -168,6 +179,7 @@ func NewEnvironment(ctx *pulumi.Context, name string, args *Args, opts ...pulumi
 		"clusterName":     component.ClusterName,
 		"logGroupName":    component.LogGroupName,
 		"stateBucketName": component.StateBucketName,
+		"kmsKeyArn":       component.KmsKeyARN,
 	})
 
 	return component, nil

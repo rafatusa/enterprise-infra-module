@@ -1,6 +1,6 @@
 // Package ec2 provides a Pulumi component resource for an AWS EC2 instance
 // with security group, IAM instance profile, and EBS encryption.
-// Mirrors infra/modules/aws/ec2.
+// Mirrors infra/terraform/modules/aws/ec2.
 //
 // Usage:
 //
@@ -23,6 +23,10 @@ import (
 	"github.com/pulumi/pulumi/sdk/v3/go/pulumi"
 )
 
+// defaultAmi resolves the latest Amazon Linux 2023 AMI via SSM when AmiID is
+// not supplied.
+const defaultAmi = "resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+
 // Args holds the configuration for the EC2 instance component.
 type Args struct {
 	// Name is the base name for all resources.
@@ -35,17 +39,18 @@ type Args struct {
 	SubnetID pulumi.StringInput
 	// VpcID is the VPC the instance belongs to (for SG attachment).
 	VpcID pulumi.StringInput
-	// InstanceType defaults to t3.micro.
+	// InstanceType defaults to t3.micro when nil.
 	InstanceType pulumi.StringInput
 	// KeyName is the EC2 key pair name for SSH access.
 	KeyName pulumi.StringInput
 	// AmiID overrides the default Amazon Linux 2023 AMI lookup.
 	AmiID pulumi.StringInput
-	// RootVolumeSizeGB defaults to 20.
+	// RootVolumeSizeGB defaults to 20 when nil.
 	RootVolumeSizeGB pulumi.IntInput
 	// AllowedSSHCidrs are CIDRs allowed SSH access. Default: ["0.0.0.0/0"].
 	AllowedSSHCidrs pulumi.StringArrayInput
-	// AllowedHTTPCidrs are CIDRs allowed HTTP access. Default: ["0.0.0.0/0"].
+	// AllowedHTTPCidrs are CIDRs allowed HTTP and HTTPS access.
+	// Default: ["0.0.0.0/0"].
 	AllowedHTTPCidrs pulumi.StringArrayInput
 }
 
@@ -82,39 +87,67 @@ func NewInstance(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.Re
 		"Module":      pulumi.String("aws/ec2"),
 	}
 
+	// Resolve optional inputs to their documented defaults. These are plain
+	// Input values, so nil checks are all that is needed — never type-assert
+	// on an Output, which is not resolved at construction time.
+	instanceType := args.InstanceType
+	if instanceType == nil {
+		instanceType = pulumi.String("t3.micro")
+	}
+
+	ami := args.AmiID
+	if ami == nil {
+		ami = pulumi.String(defaultAmi)
+	}
+
+	rootVolumeSize := args.RootVolumeSizeGB
+	if rootVolumeSize == nil {
+		rootVolumeSize = pulumi.Int(20)
+	}
+
+	sshCidrs := args.AllowedSSHCidrs
+	if sshCidrs == nil {
+		sshCidrs = pulumi.StringArray{pulumi.String("0.0.0.0/0")}
+	}
+
+	httpCidrs := args.AllowedHTTPCidrs
+	if httpCidrs == nil {
+		httpCidrs = pulumi.StringArray{pulumi.String("0.0.0.0/0")}
+	}
+
 	// Security Group
 	sg, err := ec2.NewSecurityGroup(ctx, fmt.Sprintf("%s-sg", name), &ec2.SecurityGroupArgs{
 		VpcId:       args.VpcID,
 		Description: pulumi.Sprintf("Security group for %s", args.Name),
 		Ingress: ec2.SecurityGroupIngressArray{
 			&ec2.SecurityGroupIngressArgs{
-				FromPort:   pulumi.Int(22),
-				ToPort:     pulumi.Int(22),
-				Protocol:   pulumi.String("tcp"),
-				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
+				FromPort:    pulumi.Int(22),
+				ToPort:      pulumi.Int(22),
+				Protocol:    pulumi.String("tcp"),
+				CidrBlocks:  sshCidrs,
 				Description: pulumi.String("SSH access"),
 			},
 			&ec2.SecurityGroupIngressArgs{
-				FromPort:   pulumi.Int(80),
-				ToPort:     pulumi.Int(80),
-				Protocol:   pulumi.String("tcp"),
-				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
+				FromPort:    pulumi.Int(80),
+				ToPort:      pulumi.Int(80),
+				Protocol:    pulumi.String("tcp"),
+				CidrBlocks:  httpCidrs,
 				Description: pulumi.String("HTTP access"),
 			},
 			&ec2.SecurityGroupIngressArgs{
-				FromPort:   pulumi.Int(443),
-				ToPort:     pulumi.Int(443),
-				Protocol:   pulumi.String("tcp"),
-				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
+				FromPort:    pulumi.Int(443),
+				ToPort:      pulumi.Int(443),
+				Protocol:    pulumi.String("tcp"),
+				CidrBlocks:  httpCidrs,
 				Description: pulumi.String("HTTPS access"),
 			},
 		},
 		Egress: ec2.SecurityGroupEgressArray{
 			&ec2.SecurityGroupEgressArgs{
-				FromPort:   pulumi.Int(0),
-				ToPort:     pulumi.Int(0),
-				Protocol:   pulumi.String("-1"),
-				CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
+				FromPort:    pulumi.Int(0),
+				ToPort:      pulumi.Int(0),
+				Protocol:    pulumi.String("-1"),
+				CidrBlocks:  pulumi.StringArray{pulumi.String("0.0.0.0/0")},
 				Description: pulumi.String("Allow all outbound"),
 			},
 		},
@@ -158,21 +191,16 @@ func NewInstance(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.Re
 		return nil, err
 	}
 
-	instanceType := "t3.micro"
-	if args.InstanceType != nil {
-		instanceType = args.InstanceType.(pulumi.String).ToStringOutput().ApplyT(func(v string) string { return v }).(string)
-	}
-
 	// EC2 Instance
 	instance, err := ec2.NewInstance(ctx, fmt.Sprintf("%s-instance", name), &ec2.InstanceArgs{
-		Ami:                 pulumi.String("resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"),
-		InstanceType:        pulumi.String(instanceType),
+		Ami:                 ami,
+		InstanceType:        instanceType,
 		SubnetId:            args.SubnetID,
 		VpcSecurityGroupIds: pulumi.StringArray{sg.ID()},
 		IamInstanceProfile:  profile.Name,
 		KeyName:             args.KeyName,
 		RootBlockDevice: &ec2.InstanceRootBlockDeviceArgs{
-			VolumeSize: pulumi.Int(20),
+			VolumeSize: rootVolumeSize,
 			VolumeType: pulumi.String("gp3"),
 			Encrypted:  pulumi.Bool(true),
 		},

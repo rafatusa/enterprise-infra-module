@@ -1,6 +1,10 @@
 // Package managedidentity provides a Pulumi component resource for an Azure
 // User-Assigned Managed Identity with optional role assignments.
-// Mirrors infra/modules/azure/managed-identity.
+// Mirrors infra/terraform/modules/azure/managed-identity.
+//
+// Note: unlike the Terraform module, this component DOES implement role
+// assignments. The Terraform side requires the consumer to create
+// azurerm_role_assignment resources against the principal_id output.
 //
 // Usage:
 //
@@ -49,11 +53,14 @@ type Args struct {
 type ManagedIdentity struct {
 	pulumi.ResourceState
 
-	IdentityName    pulumi.StringOutput `pulumi:"identityName"`
-	IdentityID      pulumi.StringOutput `pulumi:"identityId"`
-	PrincipalID     pulumi.StringOutput `pulumi:"principalId"`
-	ClientID        pulumi.StringOutput `pulumi:"clientId"`
-	TenantID        pulumi.StringOutput `pulumi:"tenantId"`
+	IdentityName pulumi.StringOutput `pulumi:"identityName"`
+	// IdentityID is the full resource ID, for use in identity_ids on other
+	// resources.
+	IdentityID pulumi.StringOutput `pulumi:"identityId"`
+	// PrincipalID is the object ID, for use in role assignments.
+	PrincipalID pulumi.StringOutput `pulumi:"principalId"`
+	ClientID    pulumi.StringOutput `pulumi:"clientId"`
+	TenantID    pulumi.StringOutput `pulumi:"tenantId"`
 }
 
 // NewManagedIdentity creates a new Azure Managed Identity component resource.

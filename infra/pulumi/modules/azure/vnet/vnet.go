@@ -1,6 +1,6 @@
 // Package vnet provides a Pulumi component resource for an Azure Virtual Network
 // with configurable subnets and service endpoints.
-// Mirrors infra/modules/azure/vnet.
+// Mirrors infra/terraform/modules/azure/vnet.
 //
 // Usage:
 //
@@ -11,7 +11,13 @@
 //	    Project:           pulumi.String("my-project"),
 //	    Environment:       pulumi.String("production"),
 //	    AddressSpaces:     pulumi.StringArray{pulumi.String("10.0.0.0/16")},
+//	    Subnets: []vnet.SubnetConfig{
+//	        {Name: "app", AddressPrefix: "10.0.1.0/24"},
+//	    },
 //	})
+//
+// SubnetIDs is ordered to match the Subnets slice, so Subnets[0] corresponds
+// to SubnetIDs.Index(0).
 package vnet
 
 import (
@@ -49,8 +55,10 @@ type Args struct {
 type VirtualNetwork struct {
 	pulumi.ResourceState
 
-	VNetName  pulumi.StringOutput      `pulumi:"vnetName"`
-	VNetID    pulumi.StringOutput      `pulumi:"vnetId"`
+	VNetName pulumi.StringOutput `pulumi:"vnetName"`
+	VNetID   pulumi.StringOutput `pulumi:"vnetId"`
+	// SubnetIDs holds the created subnet resource IDs in the same order as
+	// the Subnets argument.
 	SubnetIDs pulumi.StringArrayOutput `pulumi:"subnetIds"`
 }
 
@@ -75,14 +83,6 @@ func NewVirtualNetwork(ctx *pulumi.Context, name string, args *Args, opts ...pul
 		"Module":      pulumi.String("azure/vnet"),
 	}
 
-	subnets := network.SubnetTypeArray{}
-	for _, s := range args.Subnets {
-		subnets = append(subnets, &network.SubnetTypeArgs{
-			Name:          pulumi.String(s.Name),
-			AddressPrefix: pulumi.String(s.AddressPrefix),
-		})
-	}
-
 	vnetResource, err := network.NewVirtualNetwork(ctx, fmt.Sprintf("%s-vnet", name), &network.VirtualNetworkArgs{
 		VirtualNetworkName: args.Name,
 		ResourceGroupName:  args.ResourceGroupName,
@@ -90,16 +90,33 @@ func NewVirtualNetwork(ctx *pulumi.Context, name string, args *Args, opts ...pul
 		AddressSpace: &network.AddressSpaceArgs{
 			AddressPrefixes: args.AddressSpaces,
 		},
-		Subnets: subnets,
-		Tags:    tags,
+		Tags: tags,
 	}, resourceOpts...)
 	if err != nil {
 		return nil, err
 	}
 
+	// Create subnets as discrete resources rather than inline on the VNet so
+	// that each one has a real, addressable ID to export. Inline subnets are
+	// not individually addressable, which is why SubnetIDs was previously
+	// empty and consumers indexing it resolved to nothing.
+	subnetIDs := pulumi.StringArray{}
+	for _, s := range args.Subnets {
+		subnetResource, err := network.NewSubnet(ctx, fmt.Sprintf("%s-subnet-%s", name, s.Name), &network.SubnetArgs{
+			SubnetName:         pulumi.String(s.Name),
+			ResourceGroupName:  args.ResourceGroupName,
+			VirtualNetworkName: vnetResource.Name,
+			AddressPrefix:      pulumi.String(s.AddressPrefix),
+		}, resourceOpts...)
+		if err != nil {
+			return nil, err
+		}
+		subnetIDs = append(subnetIDs, subnetResource.ID().ToStringOutput())
+	}
+
 	component.VNetName = vnetResource.Name
 	component.VNetID = vnetResource.ID().ToStringOutput()
-	component.SubnetIDs = pulumi.StringArray{}.ToStringArrayOutput()
+	component.SubnetIDs = subnetIDs.ToStringArrayOutput()
 
 	ctx.RegisterResourceOutputs(component, pulumi.Map{
 		"vnetName":  component.VNetName,

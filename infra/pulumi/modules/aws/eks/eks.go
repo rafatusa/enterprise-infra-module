@@ -1,6 +1,6 @@
 // Package eks provides a Pulumi component resource for an AWS EKS cluster
 // with managed node groups, OIDC provider, and core add-ons.
-// Mirrors infra/modules/aws/eks.
+// Mirrors infra/terraform/modules/aws/eks.
 //
 // Usage:
 //
@@ -55,6 +55,9 @@ type Cluster struct {
 	ClusterARN      pulumi.StringOutput `pulumi:"clusterArn"`
 	OIDCProviderURL pulumi.StringOutput `pulumi:"oidcProviderUrl"`
 	NodeGroupARN    pulumi.StringOutput `pulumi:"nodeGroupArn"`
+	// ClusterCaCertificate is the base64-encoded cluster CA, needed to build
+	// a kubeconfig. Treat as sensitive.
+	ClusterCaCertificate pulumi.StringOutput `pulumi:"clusterCaCertificate"`
 }
 
 // NewCluster creates a new EKS cluster component resource.
@@ -78,6 +81,34 @@ func NewCluster(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.Res
 		"Module":      pulumi.String("aws/eks"),
 	}
 
+	// Resolve optional inputs to their documented defaults. Never
+	// type-assert a pulumi Input to a concrete type — callers legitimately
+	// pass Outputs from other resources, which would panic.
+	k8sVersion := args.KubernetesVersion
+	if k8sVersion == nil {
+		k8sVersion = pulumi.String("1.33")
+	}
+
+	nodeType := args.NodeInstanceType
+	if nodeType == nil {
+		nodeType = pulumi.String("t3.medium")
+	}
+
+	desiredSize := args.NodeDesiredCount
+	if desiredSize == nil {
+		desiredSize = pulumi.Int(2)
+	}
+
+	minSize := args.NodeMinCount
+	if minSize == nil {
+		minSize = pulumi.Int(1)
+	}
+
+	maxSize := args.NodeMaxCount
+	if maxSize == nil {
+		maxSize = pulumi.Int(4)
+	}
+
 	// Cluster IAM Role
 	clusterRole, err := iam.NewRole(ctx, fmt.Sprintf("%s-cluster-role", name), &iam.RoleArgs{
 		AssumeRolePolicy: pulumi.String(`{
@@ -94,7 +125,7 @@ func NewCluster(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.Res
 		return nil, err
 	}
 
-	_, err = iam.NewRolePolicyAttachment(ctx, fmt.Sprintf("%s-cluster-policy", name), &iam.RolePolicyAttachmentArgs{
+	clusterPolicyAttachment, err := iam.NewRolePolicyAttachment(ctx, fmt.Sprintf("%s-cluster-policy", name), &iam.RolePolicyAttachmentArgs{
 		Role:      clusterRole.Name,
 		PolicyArn: pulumi.String("arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"),
 	}, resourceOpts...)
@@ -118,26 +149,24 @@ func NewCluster(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.Res
 		return nil, err
 	}
 
-	for _, policy := range []string{
+	nodePolicyAttachments := []pulumi.Resource{}
+	for i, policy := range []string{
 		"arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy",
 		"arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy",
 		"arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly",
 	} {
-		_, err = iam.NewRolePolicyAttachment(ctx, fmt.Sprintf("%s-node-policy-%s", name, policy[len(policy)-8:]), &iam.RolePolicyAttachmentArgs{
+		attachment, err := iam.NewRolePolicyAttachment(ctx, fmt.Sprintf("%s-node-policy-%d", name, i), &iam.RolePolicyAttachmentArgs{
 			Role:      nodeRole.Name,
 			PolicyArn: pulumi.String(policy),
 		}, resourceOpts...)
 		if err != nil {
 			return nil, err
 		}
+		nodePolicyAttachments = append(nodePolicyAttachments, attachment)
 	}
 
-	k8sVersion := pulumi.String("1.33")
-	if args.KubernetesVersion != nil {
-		k8sVersion = args.KubernetesVersion.(pulumi.String)
-	}
-
-	// EKS Cluster
+	// EKS Cluster. The control plane must not be created before its policy
+	// attachment exists, or cluster creation fails with a permissions error.
 	cluster, err := eks.NewCluster(ctx, fmt.Sprintf("%s-cluster", name), &eks.ClusterArgs{
 		Name:    args.ClusterName,
 		Version: k8sVersion,
@@ -153,32 +182,28 @@ func NewCluster(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.Res
 			pulumi.String("authenticator"),
 		},
 		Tags: tags,
-	}, resourceOpts...)
+	}, append(resourceOpts, pulumi.DependsOn([]pulumi.Resource{clusterPolicyAttachment}))...)
 	if err != nil {
 		return nil, err
 	}
 
-	nodeType := pulumi.String("t3.medium")
-	if args.NodeInstanceType != nil {
-		nodeType = args.NodeInstanceType.(pulumi.String)
-	}
-
-	// Managed Node Group
+	// Managed Node Group. Nodes must not launch before they can join the
+	// cluster, so wait for every policy attachment.
 	nodeGroup, err := eks.NewNodeGroup(ctx, fmt.Sprintf("%s-nodegroup", name), &eks.NodeGroupArgs{
 		ClusterName:   cluster.Name,
 		NodeRoleArn:   nodeRole.Arn,
 		SubnetIds:     args.PrivateSubnetIDs,
 		InstanceTypes: pulumi.StringArray{nodeType},
 		ScalingConfig: &eks.NodeGroupScalingConfigArgs{
-			DesiredSize: pulumi.Int(2),
-			MinSize:     pulumi.Int(1),
-			MaxSize:     pulumi.Int(4),
+			DesiredSize: desiredSize,
+			MinSize:     minSize,
+			MaxSize:     maxSize,
 		},
 		UpdateConfig: &eks.NodeGroupUpdateConfigArgs{
 			MaxUnavailable: pulumi.Int(1),
 		},
 		Tags: tags,
-	}, resourceOpts...)
+	}, append(resourceOpts, pulumi.DependsOn(nodePolicyAttachments))...)
 	if err != nil {
 		return nil, err
 	}
@@ -188,13 +213,15 @@ func NewCluster(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.Res
 	component.ClusterARN = cluster.Arn
 	component.OIDCProviderURL = cluster.Identities.Index(pulumi.Int(0)).Oidcs().Index(pulumi.Int(0)).Issuer().Elem()
 	component.NodeGroupARN = nodeGroup.Arn
+	component.ClusterCaCertificate = cluster.CertificateAuthority.Data().Elem()
 
 	ctx.RegisterResourceOutputs(component, pulumi.Map{
-		"clusterName":     component.ClusterName,
-		"clusterEndpoint": component.ClusterEndpoint,
-		"clusterArn":      component.ClusterARN,
-		"oidcProviderUrl": component.OIDCProviderURL,
-		"nodeGroupArn":    component.NodeGroupARN,
+		"clusterName":          component.ClusterName,
+		"clusterEndpoint":      component.ClusterEndpoint,
+		"clusterArn":           component.ClusterARN,
+		"oidcProviderUrl":      component.OIDCProviderURL,
+		"nodeGroupArn":         component.NodeGroupARN,
+		"clusterCaCertificate": component.ClusterCaCertificate,
 	})
 
 	return component, nil

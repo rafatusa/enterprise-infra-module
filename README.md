@@ -11,12 +11,6 @@ published for **both Terraform and Pulumi**.
 > [CHANGELOG.md](CHANGELOG.md) for the migration diff. Pin to `v1.x` if you are
 > not ready to migrate.
 
-> **⚠️ Known documentation defect.** The per-module `README.md` files and several
-> examples below describe an earlier design: some document inputs and outputs that
-> do not exist in the code. **The `.tf` and `.go` sources are authoritative.** A
-> documentation-accuracy pass is tracked separately; see the *Known issues*
-> section of [CHANGELOG.md](CHANGELOG.md).
-
 ---
 
 ## Repository Layout
@@ -42,7 +36,8 @@ infra/
 ```
 
 The two trees are mirror images: the same component exists at the same coordinates
-under `terraform/` and `pulumi/`.
+under `terraform/` and `pulumi/`. Where they deliberately differ, the divergence is
+documented in [`infra/pulumi/README.md`](infra/pulumi/README.md).
 
 ---
 
@@ -88,7 +83,7 @@ provider "aws" {
 }
 
 module "vpc" {
-  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/vpc?ref=v2.0.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/vpc?ref=v2.1.0"
 
   project_name         = var.project_name
   environment          = var.environment
@@ -100,7 +95,7 @@ module "vpc" {
 }
 
 module "ec2" {
-  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/ec2?ref=v2.0.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/ec2?ref=v2.1.0"
 
   project_name   = var.project_name
   environment    = var.environment
@@ -118,14 +113,14 @@ terraform init \
   -backend-config="region=us-east-1"
 ```
 
-Terraform clones this repo at `v2.0.0`, caches it in `.terraform/`, and never talks to it again
+Terraform clones this repo at `v2.1.0`, caches it in `.terraform/`, and never talks to it again
 until you run `terraform init -upgrade` with a newer `ref`.
 
 ### 3. To upgrade to a newer release
 
 ```hcl
 # Bump the ref in every module source
-source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/vpc?ref=v2.1.0"
+source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/vpc?ref=v2.2.0"
 ```
 
 ```bash
@@ -147,7 +142,7 @@ Composes `vpc` + `kms` + `s3` + `eks` + `cloudwatch`.
 
 ```hcl
 module "platform" {
-  source = "git::https://github.com/rafatusa/enterprise-infra-module.git//infra/terraform/packages/aws/aws-eks?ref=v2.0.0"
+  source = "git::https://github.com/rafatusa/enterprise-infra-module.git//infra/terraform/packages/aws/aws-eks?ref=v2.1.0"
 
   project_name = "acme"
   environment  = "prod"
@@ -162,13 +157,17 @@ module "platform" {
 See [`infra/terraform/packages/aws/aws-eks/README.md`](infra/terraform/packages/aws/aws-eks/README.md)
 for the full input and output reference.
 
+> This package does **not** compose `iam-role`: the `eks` module creates its own
+> cluster and node-group roles. The Pulumi `aws-eks` package does wire `iam-role`
+> in — see [`infra/pulumi/README.md`](infra/pulumi/README.md).
+
 ### `azure-aks`
 
 Composes `resource-group` + `vnet` + `nsg` + `managed-identity` + `log-analytics` + `aks`.
 
 ```hcl
 module "platform" {
-  source = "git::https://github.com/rafatusa/enterprise-infra-module.git//infra/terraform/packages/azure/azure-aks?ref=v2.0.0"
+  source = "git::https://github.com/rafatusa/enterprise-infra-module.git//infra/terraform/packages/azure/azure-aks?ref=v2.1.0"
 
   project_name = "acme"
   environment  = "prod"
@@ -189,7 +188,7 @@ for the full input and output reference.
 The same components are available as Pulumi Go components under `infra/pulumi/`.
 
 ```bash
-go get github.com/rafatusa/enterprise-infra-module/infra/pulumi@v2.0.0
+go get github.com/rafatusa/enterprise-infra-module/infra/pulumi@v2.1.0
 ```
 
 ```go
@@ -232,7 +231,7 @@ on:
       module_version:
         description: "Module library version tag"
         required: true
-        default: "v2.0.0"
+        default: "v2.1.0"
 
 jobs:
   deploy:
@@ -310,9 +309,9 @@ on:
         description: "Module name"
         required: true
       module_version:
-        description: "Release tag (e.g. v2.0.0)"
+        description: "Release tag (e.g. v2.1.0)"
         required: true
-        default: "v2.0.0"
+        default: "v2.1.0"
 
 jobs:
   plan:
@@ -383,14 +382,14 @@ jobs:
 All modules accept `project_name` (required) and `environment` (default: `"dev"`).
 Every resource is tagged with `Project`, `Environment`, and `ManagedBy=terraform`.
 
-> The examples below are inherited from v1.x and are **known to contain arguments
-> that do not exist** in some modules. Check the module's `variables.tf` before use.
+Each module's own `README.md` carries the full input/output reference. The examples
+below are verified against the module sources as of v2.1.0.
 
 ### `vpc` — VPC with public/private subnets
 
 ```hcl
 module "vpc" {
-  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/vpc?ref=v2.0.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/vpc?ref=v2.1.0"
 
   project_name         = "my-app"
   environment          = "prod"
@@ -416,18 +415,22 @@ module "vpc" {
 
 ### `ec2` — EC2 instance
 
+The AMI defaults to the latest **Ubuntu 22.04 LTS (Jammy)**, so the SSH login user
+is `ubuntu`. Override with `ami_id` if you need a different image.
+
 ```hcl
 module "ec2" {
-  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/ec2?ref=v2.0.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/ec2?ref=v2.1.0"
 
   project_name         = "my-app"
   environment          = "prod"
   subnet_id            = module.vpc.public_subnet_ids[0]
-  security_group_ids   = [module.security_group.security_group_id]
+  security_group_ids   = [module.sg.security_group_id]
   ssh_public_key       = var.ssh_public_key     # sensitive — pass via TF_VAR or secret
   instance_type        = "t3.small"
   root_volume_size     = 40
-  iam_instance_profile = module.iam_role.instance_profile_name   # optional
+  root_volume_type     = "gp3"
+  iam_instance_profile = module.app_role.instance_profile_name   # optional
 }
 ```
 
@@ -444,7 +447,7 @@ module "ec2" {
 
 ```hcl
 module "sg" {
-  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/security-group?ref=v2.0.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/security-group?ref=v2.1.0"
 
   project_name = "my-app"
   environment  = "prod"
@@ -458,6 +461,9 @@ module "sg" {
 }
 ```
 
+> Rule `description` values are sent to the AWS API, which accepts **ASCII only**.
+> Avoid typographic characters such as `—` (em dash) — use `-`.
+
 | Output | Description |
 |---|---|
 | `security_group_id` | Security group ID |
@@ -466,13 +472,14 @@ module "sg" {
 
 ### `rds` — RDS (Postgres / MySQL / MariaDB)
 
-> **Warning:** the v1.x example below documented `deletion_protection` and
-> `skip_final_snapshot` defaults that are the **inverse** of the module's actual
-> defaults (`false` and `true` respectively). Set them explicitly for production.
+> **Defaults favour ephemeral environments, not production.**
+> `deletion_protection` defaults to **`false`** and `skip_final_snapshot` defaults
+> to **`true`** — meaning a `terraform destroy` will delete the database with no
+> final snapshot. Set both explicitly for anything you care about.
 
 ```hcl
 module "rds" {
-  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/rds?ref=v2.0.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/rds?ref=v2.1.0"
 
   project_name               = "my-app"
   environment                = "prod"
@@ -488,8 +495,8 @@ module "rds" {
   username                = "dbadmin"
   password                = var.db_password    # sensitive — use TF_VAR_db_password in CI
   multi_az                = true               # production HA
-  deletion_protection     = true               # module default is false — set explicitly
-  skip_final_snapshot     = false              # module default is true — set explicitly
+  deletion_protection     = true               # module default is false
+  skip_final_snapshot     = false              # module default is true
   backup_retention_period = 7
 }
 ```
@@ -498,8 +505,10 @@ module "rds" {
 |---|---|
 | `db_instance_id` | RDS instance identifier |
 | `db_endpoint` | Connection endpoint (host:port) |
+| `db_address` | Hostname only, without the port |
 | `db_name` | Database name |
 | `db_port` | Port number |
+| `db_security_group_id` | ID of the database security group |
 
 ---
 
@@ -507,7 +516,7 @@ module "rds" {
 
 ```hcl
 module "eks" {
-  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/eks?ref=v2.0.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/eks?ref=v2.1.0"
 
   project_name = "my-app"
   environment  = "prod"
@@ -537,17 +546,20 @@ module "eks" {
 
 ```hcl
 module "alb" {
-  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/alb?ref=v2.0.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/alb?ref=v2.1.0"
 
   project_name       = "my-app"
   environment        = "prod"
   vpc_id             = module.vpc.vpc_id
-  subnet_ids         = module.vpc.public_subnet_ids
+  subnet_ids         = module.vpc.public_subnet_ids   # at least 2 AZs
   security_group_ids = [module.sg.security_group_id]
   target_port        = 8080
   health_check_path  = "/health"
 }
 ```
+
+> The module creates an **HTTP:80 listener only**. TLS termination and any
+> HTTP→HTTPS redirect are the consumer's responsibility.
 
 | Output | Description |
 |---|---|
@@ -561,13 +573,20 @@ module "alb" {
 
 ```hcl
 module "s3" {
-  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/s3?ref=v2.0.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/s3?ref=v2.1.0"
 
-  project_name = "my-app"
-  environment  = "prod"
-  kms_key_arn  = module.kms.key_arn    # optional — uses SSE-S3 if omitted
+  project_name    = "my-app"
+  environment     = "prod"
+  kms_key_arn     = module.kms.key_arn    # optional — uses SSE-S3 if omitted
+  expiration_days = 90                    # optional lifecycle expiry
 }
 ```
+
+| Output | Description |
+|---|---|
+| `bucket_id` | Name/ID of the S3 bucket |
+| `bucket_arn` | Bucket ARN |
+| `bucket_domain_name` | Bucket domain name |
 
 ---
 
@@ -575,7 +594,7 @@ module "s3" {
 
 ```hcl
 module "kms" {
-  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/kms?ref=v2.0.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/kms?ref=v2.1.0"
 
   project_name = "my-app"
   environment  = "prod"
@@ -597,26 +616,39 @@ module "kms" {
 
 ```hcl
 module "redis" {
-  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/elasticache?ref=v2.0.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/elasticache?ref=v2.1.0"
 
   project_name = "my-app"
   environment  = "prod"
-  subnet_ids   = module.vpc.private_subnet_ids
   vpc_id       = module.vpc.vpc_id
+  subnet_ids   = module.vpc.private_subnet_ids
   node_type    = "cache.t3.micro"
 }
 ```
+
+| Output | Description |
+|---|---|
+| `replication_group_id` | ElastiCache replication group ID |
+| `primary_endpoint_address` | Primary endpoint for read/write |
+| `reader_endpoint_address` | Reader endpoint for read replicas |
+| `cache_security_group_id` | ID of the cache security group |
 
 ---
 
 ### `iam-role` — IAM role with instance profile
 
+Creates a role, attaches managed and optional inline policies, and **always**
+creates an instance profile. For a role where the instance profile is optional,
+use the `iam` module instead.
+
 ```hcl
 module "app_role" {
-  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/iam-role?ref=v2.0.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/iam-role?ref=v2.1.0"
 
   project_name        = "my-app"
   environment         = "prod"
+  role_name_suffix    = "ec2"                  # role becomes <project>-<env>-ec2
+  assume_role_service = "ec2.amazonaws.com"
   managed_policy_arns = ["arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess"]
 }
 ```
@@ -631,16 +663,33 @@ module "app_role" {
 
 ### `cloudwatch` — CloudWatch log group and metric alarms
 
+`log_group_name` is a **suffix**: the module prefixes it with `/aws/<project>/<env>/`.
+Passing a full path produces a doubled name.
+
 ```hcl
 module "logs" {
-  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/cloudwatch?ref=v2.0.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/cloudwatch?ref=v2.1.0"
 
   project_name      = "my-app"
   environment       = "prod"
-  log_group_name    = "app"     # suffix — prefixed with /aws/<project>/<env>/
+  log_group_name    = "app"     # -> /aws/my-app/prod/app
   retention_in_days = 30
+
+  metric_alarms = {
+    high_cpu = {
+      metric_name = "CPUUtilization"
+      namespace   = "AWS/EC2"
+      threshold   = 80
+    }
+  }
 }
 ```
+
+| Output | Description |
+|---|---|
+| `log_group_name` | Full log group name |
+| `log_group_arn` | Log group ARN |
+| `alarm_arns` | Map of alarm name to ARN |
 
 ---
 
@@ -652,7 +701,7 @@ All Azure modules require `project_name`, `environment`, and `location`.
 
 ```hcl
 module "rg" {
-  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/azure/resource-group?ref=v2.0.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/azure/resource-group?ref=v2.1.0"
 
   project_name = "my-app"
   environment  = "prod"
@@ -672,7 +721,7 @@ module "rg" {
 
 ```hcl
 module "vnet" {
-  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/azure/vnet?ref=v2.0.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/azure/vnet?ref=v2.1.0"
 
   project_name        = "my-app"
   environment         = "prod"
@@ -686,6 +735,10 @@ module "vnet" {
 }
 ```
 
+`subnets` is a **list of objects** (`name`, `address_prefixes`, optional
+`service_endpoints`), and `subnet_ids` is a **map keyed by subnet name** —
+index it by name, not position.
+
 | Output | Description |
 |---|---|
 | `vnet_id` | Virtual network ID |
@@ -698,7 +751,7 @@ module "vnet" {
 
 ```hcl
 module "nsg" {
-  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/azure/nsg?ref=v2.0.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/azure/nsg?ref=v2.1.0"
 
   project_name        = "my-app"
   environment         = "prod"
@@ -709,15 +762,18 @@ module "nsg" {
 ```
 
 > Omitting `security_rules` applies the module default: allow HTTPS inbound,
-> deny all other inbound.
+> deny all other inbound. It is **not** an empty rule set.
 
 ---
 
 ### `aks` — Azure Kubernetes Service
 
+The cluster uses a **SystemAssigned** identity; there is no `managed_identity_id`
+input. The DNS prefix is derived from the project and environment.
+
 ```hcl
 module "aks" {
-  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/azure/aks?ref=v2.0.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/azure/aks?ref=v2.1.0"
 
   project_name        = "my-app"
   environment         = "prod"
@@ -733,14 +789,23 @@ module "aks" {
 
 ### `managed-identity` — User-assigned Managed Identity
 
+This module creates the identity only. It does **not** create role assignments —
+declare `azurerm_role_assignment` yourself against the `principal_id` output.
+
 ```hcl
 module "identity" {
-  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/azure/managed-identity?ref=v2.0.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/azure/managed-identity?ref=v2.1.0"
 
   project_name        = "my-app"
   environment         = "prod"
   location            = module.rg.location
   resource_group_name = module.rg.resource_group_name
+}
+
+resource "azurerm_role_assignment" "acr_pull" {
+  scope                = azurerm_container_registry.acr.id
+  role_definition_name = "AcrPull"
+  principal_id         = module.identity.principal_id
 }
 ```
 
@@ -750,7 +815,7 @@ module "identity" {
 
 ```hcl
 module "logs" {
-  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/azure/log-analytics?ref=v2.0.0"
+  source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/azure/log-analytics?ref=v2.1.0"
 
   project_name        = "my-app"
   environment         = "prod"
@@ -759,6 +824,12 @@ module "logs" {
   retention_in_days   = 30
 }
 ```
+
+| Output | Description |
+|---|---|
+| `workspace_id` | Log Analytics workspace resource ID |
+| `workspace_customer_id` | Workspace GUID (agent configuration) |
+| `primary_shared_key` | Primary shared key (sensitive) |
 
 ---
 
@@ -770,27 +841,27 @@ modules by hand.
 ### Full AWS stack: VPC + EC2 + RDS + ALB
 
 ```hcl
-module "vpc"  { source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/vpc?ref=v2.0.0"  ... }
-module "sg"   { source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/security-group?ref=v2.0.0" ... }
-module "role" { source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/iam-role?ref=v2.0.0" ... }
-module "kms"  { source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/kms?ref=v2.0.0"  ... }
+module "vpc"  { source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/vpc?ref=v2.1.0"  ... }
+module "sg"   { source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/security-group?ref=v2.1.0" ... }
+module "role" { source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/iam-role?ref=v2.1.0" ... }
+module "kms"  { source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/kms?ref=v2.1.0"  ... }
 
 module "ec2" {
-  source               = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/ec2?ref=v2.0.0"
+  source               = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/ec2?ref=v2.1.0"
   subnet_id            = module.vpc.public_subnet_ids[0]
   security_group_ids   = [module.sg.security_group_id]
   iam_instance_profile = module.role.instance_profile_name
 }
 
 module "rds" {
-  source                     = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/rds?ref=v2.0.0"
+  source                     = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/rds?ref=v2.1.0"
   subnet_ids                 = module.vpc.private_subnet_ids
   vpc_id                     = module.vpc.vpc_id
   allowed_security_group_ids = [module.sg.security_group_id]
 }
 
 module "alb" {
-  source             = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/alb?ref=v2.0.0"
+  source             = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/aws/alb?ref=v2.1.0"
   subnet_ids         = module.vpc.public_subnet_ids
   vpc_id             = module.vpc.vpc_id
   security_group_ids = [module.sg.security_group_id]
@@ -800,11 +871,11 @@ module "alb" {
 ### Full Azure stack: Resource Group + VNet + NSG + AKS
 
 ```hcl
-module "rg"   { source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/azure/resource-group?ref=v2.0.0" ... }
-module "vnet" { source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/azure/vnet?ref=v2.0.0"  resource_group_name = module.rg.resource_group_name ... }
-module "nsg"  { source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/azure/nsg?ref=v2.0.0"   resource_group_name = module.rg.resource_group_name ... }
-module "aks"  { source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/azure/aks?ref=v2.0.0"   resource_group_name = module.rg.resource_group_name ... }
-module "logs" { source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/azure/log-analytics?ref=v2.0.0" resource_group_name = module.rg.resource_group_name ... }
+module "rg"   { source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/azure/resource-group?ref=v2.1.0" ... }
+module "vnet" { source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/azure/vnet?ref=v2.1.0"  resource_group_name = module.rg.resource_group_name ... }
+module "nsg"  { source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/azure/nsg?ref=v2.1.0"   resource_group_name = module.rg.resource_group_name ... }
+module "aks"  { source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/azure/aks?ref=v2.1.0"   resource_group_name = module.rg.resource_group_name ... }
+module "logs" { source = "github.com/rafatusa/enterprise-infra-module//infra/terraform/modules/azure/log-analytics?ref=v2.1.0" resource_group_name = module.rg.resource_group_name ... }
 ```
 
 ---
@@ -813,7 +884,7 @@ module "logs" { source = "github.com/rafatusa/enterprise-infra-module//infra/ter
 
 | Scenario | Recommendation |
 |---|---|
-| Production workloads | Always pin to an exact tag: `?ref=v2.0.0` |
+| Production workloads | Always pin to an exact tag: `?ref=v2.1.0` |
 | Development / experimentation | Use a short SHA for a specific commit: `?ref=abc1234` |
 | Never do this | `?ref=main` — main can change at any time |
 
@@ -868,6 +939,11 @@ Every push runs the validation suite. **No cloud resources are ever provisioned.
 Because this repo owns no state and deploys nothing, modules and packages declare
 **no backend block**. State is always the consumer's responsibility.
 
+> **What CI does not catch.** Every stage is static analysis; nothing runs
+> `terraform apply`. Values that are valid HCL but rejected by a cloud API — for
+> example non-ASCII characters in an AWS security group `description` — pass CI and
+> fail at apply time in a consuming repo. Review such values by hand.
+
 ---
 
 ## Contributing
@@ -877,7 +953,8 @@ Because this repo owns no state and deploys nothing, modules and packages declar
 2. Add the mirroring Pulumi component under `infra/pulumi/modules/<cloud>/<name>/`.
 3. Tag every resource with `Project`, `Environment`, and `ManagedBy = "terraform"`.
 4. Keep module `README.md` files accurate against the code — every input, output and
-   default in the table must exist. See the *Known issues* in [CHANGELOG.md](CHANGELOG.md).
+   default in the table must exist. Verify against `variables.tf` and `outputs.tf`,
+   not against the previous version of the README.
 5. Ensure the module passes `tflint`, `tfsec`, and `checkov` — push to a branch and the
    CI suite runs automatically.
 6. Open a PR. After merge to `main`, bump `VERSION` and trigger the **Release** workflow.

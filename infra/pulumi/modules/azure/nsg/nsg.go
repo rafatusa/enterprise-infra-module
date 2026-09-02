@@ -1,6 +1,6 @@
 // Package nsg provides a Pulumi component resource for an Azure Network Security Group
 // with configurable security rules.
-// Mirrors infra/modules/azure/nsg.
+// Mirrors infra/terraform/modules/azure/nsg.
 //
 // Usage:
 //
@@ -46,7 +46,8 @@ type Args struct {
 	Project pulumi.StringInput
 	// Environment tag value.
 	Environment pulumi.StringInput
-	// SecurityRules are the NSG rules to create.
+	// SecurityRules are the NSG rules to create. An empty slice leaves the
+	// Azure platform default rules in place.
 	SecurityRules []SecurityRule
 }
 
@@ -56,7 +57,6 @@ type NetworkSecurityGroup struct {
 
 	NSGName pulumi.StringOutput `pulumi:"nsgName"`
 	NSGID   pulumi.StringOutput `pulumi:"nsgId"`
-	NSGARN  pulumi.StringOutput `pulumi:"nsgArn"`
 }
 
 // NewNetworkSecurityGroup creates a new Azure NSG component resource.
@@ -109,7 +109,6 @@ func NewNetworkSecurityGroup(ctx *pulumi.Context, name string, args *Args, opts 
 
 	component.NSGName = nsgResource.Name
 	component.NSGID = nsgResource.ID().ToStringOutput()
-	component.NSGARN = nsgResource.ID().ToStringOutput()
 
 	ctx.RegisterResourceOutputs(component, pulumi.Map{
 		"nsgName": component.NSGName,

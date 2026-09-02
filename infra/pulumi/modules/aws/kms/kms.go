@@ -1,6 +1,6 @@
 // Package kms provides a Pulumi component resource for an AWS KMS key
 // with rotation, key policy, and alias.
-// Mirrors infra/modules/aws/kms.
+// Mirrors infra/terraform/modules/aws/kms.
 //
 // Usage:
 //
@@ -28,6 +28,7 @@ type Args struct {
 	// Environment tag value.
 	Environment pulumi.StringInput
 	// Description describes the key's intended use.
+	// Defaults to "Managed by Pulumi" when nil.
 	Description pulumi.StringInput
 	// EnableKeyRotation enables annual automatic key rotation. Default: true.
 	EnableKeyRotation pulumi.BoolInput
@@ -68,17 +69,35 @@ func NewKey(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.Resourc
 		"Module":      pulumi.String("aws/kms"),
 	}
 
-	desc := pulumi.String("Managed by Pulumi")
-	if args.Description != nil {
-		desc = args.Description.(pulumi.String)
+	// Resolve optional inputs to their documented defaults. Never type-assert
+	// a pulumi Input to a concrete type — callers legitimately pass Outputs
+	// from other resources, which would panic.
+	desc := args.Description
+	if desc == nil {
+		desc = pulumi.String("Managed by Pulumi")
+	}
+
+	enableRotation := args.EnableKeyRotation
+	if enableRotation == nil {
+		enableRotation = pulumi.Bool(true)
+	}
+
+	deletionWindow := args.DeletionWindowDays
+	if deletionWindow == nil {
+		deletionWindow = pulumi.Int(30)
+	}
+
+	multiRegion := args.MultiRegion
+	if multiRegion == nil {
+		multiRegion = pulumi.Bool(false)
 	}
 
 	key, err := kms.NewKey(ctx, fmt.Sprintf("%s-key", name), &kms.KeyArgs{
-		Description:            desc,
-		EnableKeyRotation:      pulumi.Bool(true),
-		DeletionWindowInDays:   pulumi.Int(30),
-		MultiRegion:            pulumi.Bool(false),
-		Tags:                   tags,
+		Description:          desc,
+		EnableKeyRotation:    enableRotation,
+		DeletionWindowInDays: deletionWindow,
+		MultiRegion:          multiRegion,
+		Tags:                 tags,
 	}, resourceOpts...)
 	if err != nil {
 		return nil, err

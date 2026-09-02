@@ -22,7 +22,7 @@ resource "aws_elasticache_subnet_group" "this" {
 
 resource "aws_security_group" "cache" {
   name        = "${var.project_name}-${var.environment}-cache-sg"
-  description = "ElastiCache access — managed by Terraform"
+  description = "ElastiCache access - managed by Terraform"
   vpc_id      = var.vpc_id
 
   ingress {

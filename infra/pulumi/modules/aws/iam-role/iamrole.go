@@ -1,6 +1,6 @@
 // Package iamrole provides a Pulumi component resource for an AWS IAM Role
 // with trust policy, managed policy attachments, and optional instance profile.
-// Mirrors infra/modules/aws/iam-role.
+// Mirrors infra/terraform/modules/aws/iam-role.
 //
 // Usage:
 //
@@ -9,10 +9,10 @@
 //	    Project:           pulumi.String("my-project"),
 //	    Environment:       pulumi.String("production"),
 //	    AssumeRoleService: pulumi.String("ec2.amazonaws.com"),
-//	    ManagedPolicyARNs: pulumi.StringArray{
-//	        pulumi.String("arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"),
+//	    ManagedPolicyARNs: []string{
+//	        "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore",
 //	    },
-//	    CreateInstanceProfile: pulumi.Bool(true),
+//	    CreateInstanceProfile: true,
 //	})
 package iamrole
 
@@ -32,23 +32,28 @@ type Args struct {
 	// Environment tag value.
 	Environment pulumi.StringInput
 	// AssumeRoleService is the AWS service principal (e.g. "ec2.amazonaws.com").
+	// Ignored when AssumeRolePolicy is set. Defaults to ec2.amazonaws.com.
 	AssumeRoleService pulumi.StringInput
 	// AssumeRolePolicy overrides the generated trust policy JSON.
 	AssumeRolePolicy pulumi.StringInput
 	// ManagedPolicyARNs are AWS-managed or customer-managed policies to attach.
-	ManagedPolicyARNs pulumi.StringArrayInput
+	// This is a plain slice, not an Input: the number of attachments must be
+	// known at construction time so each one is a real, addressable resource.
+	ManagedPolicyARNs []string
 	// InlinePolicy is an optional inline policy JSON string.
 	InlinePolicy pulumi.StringInput
 	// CreateInstanceProfile creates an EC2 instance profile. Default: false.
-	CreateInstanceProfile pulumi.BoolInput
+	CreateInstanceProfile bool
 }
 
 // Role is the component resource output.
 type Role struct {
 	pulumi.ResourceState
 
-	RoleARN             pulumi.StringOutput `pulumi:"roleArn"`
-	RoleName            pulumi.StringOutput `pulumi:"roleName"`
+	RoleARN  pulumi.StringOutput `pulumi:"roleArn"`
+	RoleName pulumi.StringOutput `pulumi:"roleName"`
+	// InstanceProfileARN and InstanceProfileName are empty strings when
+	// CreateInstanceProfile is false.
 	InstanceProfileARN  pulumi.StringOutput `pulumi:"instanceProfileArn"`
 	InstanceProfileName pulumi.StringOutput `pulumi:"instanceProfileName"`
 }
@@ -75,10 +80,15 @@ func NewRole(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.Resour
 	}
 
 	var trustPolicy pulumi.StringInput
-	if args.AssumeRolePolicy != nil {
+	switch {
+	case args.AssumeRolePolicy != nil:
 		trustPolicy = args.AssumeRolePolicy
-	} else {
-		trustPolicy = args.AssumeRoleService.ToStringOutput().ApplyT(func(svc string) string {
+	default:
+		service := args.AssumeRoleService
+		if service == nil {
+			service = pulumi.String("ec2.amazonaws.com")
+		}
+		trustPolicy = service.ToStringOutput().ApplyT(func(svc string) string {
 			return fmt.Sprintf(`{
 				"Version": "2012-10-17",
 				"Statement": [{
@@ -99,39 +109,51 @@ func NewRole(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.Resour
 		return nil, err
 	}
 
-	// Attach managed policies
-	if args.ManagedPolicyARNs != nil {
-		arns := args.ManagedPolicyARNs.ToStringArrayOutput()
-		arns.ApplyT(func(policies []string) error {
-			for i, arn := range policies {
-				_, err := iam.NewRolePolicyAttachment(ctx,
-					fmt.Sprintf("%s-policy-%d", name, i),
-					&iam.RolePolicyAttachmentArgs{
-						Role:      role.Name,
-						PolicyArn: pulumi.String(arn),
-					}, resourceOpts...)
-				if err != nil {
-					return err
-				}
-			}
-			return nil
-		})
+	// Attach managed policies. These are created synchronously so that
+	// registration errors propagate to the caller — creating resources inside
+	// an ApplyT callback races the engine and silently drops the error.
+	for i, arn := range args.ManagedPolicyARNs {
+		_, err := iam.NewRolePolicyAttachment(ctx,
+			fmt.Sprintf("%s-policy-%d", name, i),
+			&iam.RolePolicyAttachmentArgs{
+				Role:      role.Name,
+				PolicyArn: pulumi.String(arn),
+			}, resourceOpts...)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Inline policy (optional)
+	if args.InlinePolicy != nil {
+		_, err = iam.NewRolePolicy(ctx, fmt.Sprintf("%s-inline", name), &iam.RolePolicyArgs{
+			Role:   role.ID(),
+			Policy: args.InlinePolicy,
+		}, resourceOpts...)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Instance Profile (optional)
-	profile, err := iam.NewInstanceProfile(ctx, fmt.Sprintf("%s-profile", name), &iam.InstanceProfileArgs{
-		Name: args.Name,
-		Role: role.Name,
-		Tags: tags,
-	}, resourceOpts...)
-	if err != nil {
-		return nil, err
-	}
-
 	component.RoleARN = role.Arn
 	component.RoleName = role.Name
-	component.InstanceProfileARN = profile.Arn
-	component.InstanceProfileName = profile.Name
+
+	if args.CreateInstanceProfile {
+		profile, err := iam.NewInstanceProfile(ctx, fmt.Sprintf("%s-profile", name), &iam.InstanceProfileArgs{
+			Name: args.Name,
+			Role: role.Name,
+			Tags: tags,
+		}, resourceOpts...)
+		if err != nil {
+			return nil, err
+		}
+		component.InstanceProfileARN = profile.Arn
+		component.InstanceProfileName = profile.Name
+	} else {
+		component.InstanceProfileARN = pulumi.String("").ToStringOutput()
+		component.InstanceProfileName = pulumi.String("").ToStringOutput()
+	}
 
 	ctx.RegisterResourceOutputs(component, pulumi.Map{
 		"roleArn":             component.RoleARN,

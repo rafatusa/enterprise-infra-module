@@ -1,6 +1,6 @@
 // Package securitygroup provides a Pulumi component resource for an AWS Security Group
 // with configurable ingress and egress rules.
-// Mirrors infra/modules/aws/security-group.
+// Mirrors infra/terraform/modules/aws/security-group.
 //
 // Usage:
 //
@@ -9,7 +9,7 @@
 //	    Project:     pulumi.String("my-project"),
 //	    Environment: pulumi.String("production"),
 //	    VpcID:       vpc.VpcID,
-//	    IngressRules: securitygroup.IngressRuleArray{
+//	    IngressRules: []securitygroup.IngressRule{
 //	        {FromPort: 80, ToPort: 80, Protocol: "tcp", CidrBlocks: []string{"0.0.0.0/0"}},
 //	    },
 //	})
@@ -41,12 +41,13 @@ type Args struct {
 	Environment pulumi.StringInput
 	// VpcID is the VPC the security group belongs to.
 	VpcID pulumi.StringInput
-	// Description defaults to "Managed by Pulumi".
+	// Description defaults to "Managed by Pulumi" when nil.
 	Description pulumi.StringInput
 	// IngressRules are the inbound rules.
 	IngressRules []IngressRule
 	// AllowAllEgress adds a default allow-all egress rule. Default: true.
-	AllowAllEgress pulumi.BoolInput
+	// Set to pulumi.Bool(false) to create the group with no egress rules.
+	AllowAllEgress *bool
 }
 
 // SecurityGroup is the component resource output.
@@ -94,19 +95,25 @@ func NewSecurityGroup(ctx *pulumi.Context, name string, args *Args, opts ...pulu
 		})
 	}
 
-	egress := ec2.SecurityGroupEgressArray{
-		&ec2.SecurityGroupEgressArgs{
-			FromPort:   pulumi.Int(0),
-			ToPort:     pulumi.Int(0),
-			Protocol:   pulumi.String("-1"),
-			CidrBlocks: pulumi.StringArray{pulumi.String("0.0.0.0/0")},
+	// AllowAllEgress defaults to true when unset.
+	allowAllEgress := args.AllowAllEgress == nil || *args.AllowAllEgress
+
+	egress := ec2.SecurityGroupEgressArray{}
+	if allowAllEgress {
+		egress = append(egress, &ec2.SecurityGroupEgressArgs{
+			FromPort:    pulumi.Int(0),
+			ToPort:      pulumi.Int(0),
+			Protocol:    pulumi.String("-1"),
+			CidrBlocks:  pulumi.StringArray{pulumi.String("0.0.0.0/0")},
 			Description: pulumi.String("Allow all outbound"),
-		},
+		})
 	}
 
-	desc := pulumi.String("Managed by Pulumi")
-	if args.Description != nil {
-		desc = args.Description.(pulumi.String)
+	// Never type-assert a pulumi Input to a concrete type — callers
+	// legitimately pass Outputs from other resources, which would panic.
+	desc := args.Description
+	if desc == nil {
+		desc = pulumi.String("Managed by Pulumi")
 	}
 
 	sg, err := ec2.NewSecurityGroup(ctx, fmt.Sprintf("%s-sg", name), &ec2.SecurityGroupArgs{

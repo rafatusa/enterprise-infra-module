@@ -1,6 +1,6 @@
 // Package rds provides a Pulumi component resource for an AWS RDS PostgreSQL instance
 // with encryption, automated backups, parameter group, and subnet group.
-// Mirrors infra/modules/aws/rds.
+// Mirrors infra/terraform/modules/aws/rds.
 //
 // Usage:
 //
@@ -12,6 +12,7 @@
 //	    DBUsername:   pulumi.String("appuser"),
 //	    DBPassword:   cfg.RequireSecret("dbPassword"),
 //	    SubnetIDs:    vpc.PrivateSubnetIDs,
+//	    VpcID:        vpc.VpcID,
 //	    AppSGID:      app.SecurityGroupID,
 //	})
 package rds
@@ -50,10 +51,20 @@ type Args struct {
 	Engine pulumi.StringInput
 	// EngineVersion defaults to 15.
 	EngineVersion pulumi.StringInput
+	// ParameterGroupFamily defaults to postgres15. Must match EngineVersion.
+	ParameterGroupFamily pulumi.StringInput
+	// Port defaults to 5432.
+	Port pulumi.IntInput
 	// AllocatedStorage defaults to 20 GB.
 	AllocatedStorage pulumi.IntInput
 	// BackupRetentionDays defaults to 7.
 	BackupRetentionDays pulumi.IntInput
+	// DeletionProtection prevents accidental deletion. Default: false.
+	// Set true for any database holding real data.
+	DeletionProtection pulumi.BoolInput
+	// SkipFinalSnapshot skips the final snapshot on destroy. Default: false,
+	// which means a final snapshot IS taken.
+	SkipFinalSnapshot pulumi.BoolInput
 }
 
 // Database is the component resource output.
@@ -87,17 +98,65 @@ func NewDatabase(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.Re
 		"Module":      pulumi.String("aws/rds"),
 	}
 
+	// Resolve optional inputs to their documented defaults. Never
+	// type-assert a pulumi Input to a concrete type — callers legitimately
+	// pass Outputs from other resources, which would panic.
+	engine := args.Engine
+	if engine == nil {
+		engine = pulumi.String("postgres")
+	}
+
+	engineVersion := args.EngineVersion
+	if engineVersion == nil {
+		engineVersion = pulumi.String("15")
+	}
+
+	paramFamily := args.ParameterGroupFamily
+	if paramFamily == nil {
+		paramFamily = pulumi.String("postgres15")
+	}
+
+	instanceClass := args.InstanceClass
+	if instanceClass == nil {
+		instanceClass = pulumi.String("db.t3.micro")
+	}
+
+	allocatedStorage := args.AllocatedStorage
+	if allocatedStorage == nil {
+		allocatedStorage = pulumi.Int(20)
+	}
+
+	backupRetention := args.BackupRetentionDays
+	if backupRetention == nil {
+		backupRetention = pulumi.Int(7)
+	}
+
+	port := args.Port
+	if port == nil {
+		port = pulumi.Int(5432)
+	}
+
+	deletionProtection := args.DeletionProtection
+	if deletionProtection == nil {
+		deletionProtection = pulumi.Bool(false)
+	}
+
+	skipFinalSnapshot := args.SkipFinalSnapshot
+	if skipFinalSnapshot == nil {
+		skipFinalSnapshot = pulumi.Bool(false)
+	}
+
 	// DB Security Group
 	sg, err := ec2.NewSecurityGroup(ctx, fmt.Sprintf("%s-db-sg", name), &ec2.SecurityGroupArgs{
 		VpcId:       args.VpcID,
 		Description: pulumi.Sprintf("Security group for RDS %s", args.Identifier),
 		Ingress: ec2.SecurityGroupIngressArray{
 			&ec2.SecurityGroupIngressArgs{
-				FromPort:              pulumi.Int(5432),
-				ToPort:                pulumi.Int(5432),
+				FromPort:              port,
+				ToPort:                port,
 				Protocol:              pulumi.String("tcp"),
 				SourceSecurityGroupId: args.AppSGID,
-				Description:           pulumi.String("PostgreSQL from app"),
+				Description:           pulumi.String("Database port from app"),
 			},
 		},
 		Tags: tags,
@@ -117,7 +176,7 @@ func NewDatabase(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.Re
 
 	// Parameter Group
 	paramGroup, err := rds.NewParameterGroup(ctx, fmt.Sprintf("%s-params", name), &rds.ParameterGroupArgs{
-		Family: pulumi.String("postgres15"),
+		Family: paramFamily,
 		Parameters: rds.ParameterGroupParameterArray{
 			&rds.ParameterGroupParameterArgs{
 				Name:  pulumi.String("log_connections"),
@@ -136,23 +195,25 @@ func NewDatabase(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.Re
 
 	// RDS Instance
 	instance, err := rds.NewInstance(ctx, fmt.Sprintf("%s-db", name), &rds.InstanceArgs{
-		Identifier:          args.Identifier,
-		Engine:              pulumi.String("postgres"),
-		EngineVersion:       pulumi.String("15"),
-		InstanceClass:       pulumi.String("db.t3.micro"),
-		AllocatedStorage:    pulumi.Int(20),
-		DbName:              args.DBName,
-		Username:            args.DBUsername,
-		Password:            args.DBPassword,
-		DbSubnetGroupName:   subnetGroup.Name,
-		ParameterGroupName:  paramGroup.Name,
-		VpcSecurityGroupIds: pulumi.StringArray{sg.ID()},
-		StorageEncrypted:    pulumi.Bool(true),
-		BackupRetentionPeriod: pulumi.Int(7),
-		DeletionProtection:  pulumi.Bool(false),
-		SkipFinalSnapshot:   pulumi.Bool(false),
+		Identifier:              args.Identifier,
+		Engine:                  engine,
+		EngineVersion:           engineVersion,
+		InstanceClass:           instanceClass,
+		AllocatedStorage:        allocatedStorage,
+		DbName:                  args.DBName,
+		Username:                args.DBUsername,
+		Password:                args.DBPassword,
+		Port:                    port,
+		DbSubnetGroupName:       subnetGroup.Name,
+		ParameterGroupName:      paramGroup.Name,
+		VpcSecurityGroupIds:     pulumi.StringArray{sg.ID()},
+		StorageEncrypted:        pulumi.Bool(true),
+		PubliclyAccessible:      pulumi.Bool(false),
+		BackupRetentionPeriod:   backupRetention,
+		DeletionProtection:      deletionProtection,
+		SkipFinalSnapshot:       skipFinalSnapshot,
 		FinalSnapshotIdentifier: pulumi.Sprintf("%s-final-snapshot", args.Identifier),
-		Tags: tags,
+		Tags:                    tags,
 	}, resourceOpts...)
 	if err != nil {
 		return nil, err

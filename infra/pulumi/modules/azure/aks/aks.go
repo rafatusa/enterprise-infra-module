@@ -1,6 +1,6 @@
 // Package aks provides a Pulumi component resource for an Azure Kubernetes Service (AKS) cluster
 // with system node pool, managed identity, RBAC, and Log Analytics integration.
-// Mirrors infra/modules/azure/aks.
+// Mirrors infra/terraform/modules/azure/aks.
 //
 // Usage:
 //
@@ -34,15 +34,18 @@ type Args struct {
 	Project pulumi.StringInput
 	// Environment tag value.
 	Environment pulumi.StringInput
-	// SubnetID is the subnet for the system node pool.
+	// SubnetID is the subnet for the system node pool. Azure CNI assigns a
+	// subnet IP to every pod, so size it accordingly.
 	SubnetID pulumi.StringInput
 	// WorkspaceID is the Log Analytics workspace resource ID for monitoring.
+	// When nil the monitoring addon is not enabled.
 	WorkspaceID pulumi.StringInput
 	// KubernetesVersion pins the AKS control plane version. Default: "1.30".
 	KubernetesVersion pulumi.StringInput
 	// SystemNodeCount is the system pool node count. Default: 2.
 	SystemNodeCount pulumi.IntInput
 	// SystemVMSize is the system pool VM size. Default: Standard_D4s_v5.
+	// B-series VMs are NOT supported for system pools.
 	SystemVMSize pulumi.StringInput
 	// EnablePrivateCluster makes the API server private. Default: false.
 	EnablePrivateCluster pulumi.BoolInput
@@ -52,10 +55,11 @@ type Args struct {
 type Cluster struct {
 	pulumi.ResourceState
 
-	ClusterName     pulumi.StringOutput `pulumi:"clusterName"`
-	ClusterID       pulumi.StringOutput `pulumi:"clusterId"`
-	KubeconfigRaw   pulumi.StringOutput `pulumi:"kubeconfigRaw"`
-	NodeResourceGroup pulumi.StringOutput `pulumi:"nodeResourceGroup"`
+	ClusterName pulumi.StringOutput `pulumi:"clusterName"`
+	ClusterID   pulumi.StringOutput `pulumi:"clusterId"`
+	// KubeconfigRaw is the base64-encoded admin kubeconfig. Treat as a secret.
+	KubeconfigRaw       pulumi.StringOutput `pulumi:"kubeconfigRaw"`
+	NodeResourceGroup   pulumi.StringOutput `pulumi:"nodeResourceGroup"`
 	IdentityPrincipalID pulumi.StringOutput `pulumi:"identityPrincipalId"`
 }
 
@@ -80,14 +84,38 @@ func NewCluster(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.Res
 		"Module":      pulumi.String("azure/aks"),
 	}
 
-	k8sVersion := pulumi.String("1.30")
-	if args.KubernetesVersion != nil {
-		k8sVersion = args.KubernetesVersion.(pulumi.String)
+	// Resolve optional inputs to their documented defaults. Never
+	// type-assert a pulumi Input to a concrete type — callers legitimately
+	// pass Outputs from other resources, which would panic.
+	k8sVersion := args.KubernetesVersion
+	if k8sVersion == nil {
+		k8sVersion = pulumi.String("1.30")
 	}
 
-	vmSize := pulumi.String("Standard_D4s_v5")
-	if args.SystemVMSize != nil {
-		vmSize = args.SystemVMSize.(pulumi.String)
+	vmSize := args.SystemVMSize
+	if vmSize == nil {
+		vmSize = pulumi.String("Standard_D4s_v5")
+	}
+
+	nodeCount := args.SystemNodeCount
+	if nodeCount == nil {
+		nodeCount = pulumi.Int(2)
+	}
+
+	enablePrivateCluster := args.EnablePrivateCluster
+	if enablePrivateCluster == nil {
+		enablePrivateCluster = pulumi.Bool(false)
+	}
+
+	// Monitoring addon is only wired up when a workspace was supplied.
+	addonProfiles := containerservice.ManagedClusterAddonProfileMap{}
+	if args.WorkspaceID != nil {
+		addonProfiles["omsagent"] = &containerservice.ManagedClusterAddonProfileArgs{
+			Enabled: pulumi.Bool(true),
+			Config: pulumi.StringMap{
+				"logAnalyticsWorkspaceResourceID": args.WorkspaceID,
+			},
+		}
 	}
 
 	cluster, err := containerservice.NewManagedCluster(ctx, fmt.Sprintf("%s-aks", name), &containerservice.ManagedClusterArgs{
@@ -102,20 +130,20 @@ func NewCluster(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.Res
 			Type: containerservice.ResourceIdentityTypeSystemAssigned,
 		},
 
-		// System node pool — B-series NOT supported for system pools
+		// System node pool. B-series VMs are NOT supported for system pools.
 		AgentPoolProfiles: containerservice.ManagedClusterAgentPoolProfileArray{
 			&containerservice.ManagedClusterAgentPoolProfileArgs{
-				Name:               pulumi.String("system"),
-				Mode:               pulumi.String("System"),
-				Count:              pulumi.Int(2),
-				MinCount:           pulumi.Int(1),
-				MaxCount:           pulumi.Int(4),
-				EnableAutoScaling:  pulumi.Bool(true),
-				VmSize:             vmSize,
-				OsDiskSizeGB:       pulumi.Int(50),
-				OsDiskType:         pulumi.String("Managed"),
-				VnetSubnetID:       args.SubnetID,
-				MaxPods:            pulumi.Int(30),
+				Name:              pulumi.String("system"),
+				Mode:              pulumi.String("System"),
+				Count:             nodeCount,
+				MinCount:          pulumi.Int(1),
+				MaxCount:          pulumi.Int(4),
+				EnableAutoScaling: pulumi.Bool(true),
+				VmSize:            vmSize,
+				OsDiskSizeGB:      pulumi.Int(50),
+				OsDiskType:        pulumi.String("Managed"),
+				VnetSubnetID:      args.SubnetID,
+				MaxPods:           pulumi.Int(30),
 				NodeLabels: pulumi.StringMap{
 					"nodepool-type": pulumi.String("system"),
 					"environment":   args.Environment,
@@ -131,23 +159,20 @@ func NewCluster(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.Res
 			EnableAzureRBAC: pulumi.Bool(true),
 		},
 
+		ApiServerAccessProfile: &containerservice.ManagedClusterAPIServerAccessProfileArgs{
+			EnablePrivateCluster: enablePrivateCluster,
+		},
+
 		// Network
 		NetworkProfile: &containerservice.ContainerServiceNetworkProfileArgs{
-			NetworkPlugin:    pulumi.String("azure"),
-			NetworkPolicy:    pulumi.String("calico"),
-			LoadBalancerSku:  pulumi.String("standard"),
-			OutboundType:     pulumi.String("loadBalancer"),
+			NetworkPlugin:   pulumi.String("azure"),
+			NetworkPolicy:   pulumi.String("calico"),
+			LoadBalancerSku: pulumi.String("standard"),
+			OutboundType:    pulumi.String("loadBalancer"),
 		},
 
 		// Monitoring
-		AddonProfiles: containerservice.ManagedClusterAddonProfileMap{
-			"omsagent": &containerservice.ManagedClusterAddonProfileArgs{
-				Enabled: pulumi.Bool(true),
-				Config: pulumi.StringMap{
-					"logAnalyticsWorkspaceResourceID": args.WorkspaceID,
-				},
-			},
-		},
+		AddonProfiles: addonProfiles,
 
 		Tags: tags,
 	}, resourceOpts...)
@@ -162,20 +187,18 @@ func NewCluster(ctx *pulumi.Context, name string, args *Args, opts ...pulumi.Res
 			ResourceName:      cluster.Name,
 		})
 
-	kubeconfig := creds.Kubeconfigs().Index(pulumi.Int(0)).Value().ApplyT(func(encoded string) string {
-		return encoded
-	}).(pulumi.StringOutput)
-
 	component.ClusterName = cluster.Name
 	component.ClusterID = cluster.ID().ToStringOutput()
-	component.KubeconfigRaw = kubeconfig
+	component.KubeconfigRaw = creds.Kubeconfigs().Index(pulumi.Int(0)).Value().Elem()
 	component.NodeResourceGroup = cluster.NodeResourceGroup.Elem()
 	component.IdentityPrincipalID = cluster.IdentityProfile.MapIndex(pulumi.String("kubeletidentity")).ClientId().Elem()
 
 	ctx.RegisterResourceOutputs(component, pulumi.Map{
-		"clusterName":       component.ClusterName,
-		"clusterId":         component.ClusterID,
-		"nodeResourceGroup": component.NodeResourceGroup,
+		"clusterName":         component.ClusterName,
+		"clusterId":           component.ClusterID,
+		"kubeconfigRaw":       component.KubeconfigRaw,
+		"nodeResourceGroup":   component.NodeResourceGroup,
+		"identityPrincipalId": component.IdentityPrincipalID,
 	})
 
 	return component, nil
